@@ -5,6 +5,11 @@
     <AssemblyName>LogsParser</AssemblyName>
     <RootNamespace>LogsParser</RootNamespace>
     <PackageId>LogsParser</PackageId>
+    <Version>1.0.1</Version>
+    <PackageVersion>1.0.1</PackageVersion>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
+    <InformationalVersion>1.0.1</InformationalVersion>
     <Title>LogsParser</Title>
     <Description>.NET library for authentication, log parsing, account inspection, and filter catalog access on arizonarp.logsparser.info.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -12,6 +17,7 @@
     <PackageTags>logsparser;arizonarp;parser;2fa;serilog;logging</PackageTags>
     <Authors>AllahPower</Authors>
     <PackageProjectUrl>https://github.com/AllahPower/LogTools</PackageProjectUrl>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <RepositoryUrl>https://github.com/AllahPower/LogTools.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -23,6 +29,7 @@
 
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\LICENSE" Pack="true" PackagePath="\" />
     <None Include="..\logo.png" Pack="true" PackagePath="\" />
   </ItemGroup>
 

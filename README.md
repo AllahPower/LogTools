@@ -414,6 +414,12 @@ $env:DOTNET_SKIP_FIRST_TIME_EXPERIENCE='1'
 dotnet build
 ```
 
+## License
+
+This project is licensed under `CC BY-NC 4.0`.
+Commercial use is not permitted.
+See [LICENSE](LICENSE).
+
 ## Notes
 
 - The library is intended for integration scenarios first.
