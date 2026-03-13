@@ -1,0 +1,12 @@
+.vs/
+.dotnet/
+
+**/bin/
+**/obj/
+
+*.user
+*.suo
+*.cache
+*.log
+*.tmp
+*.DS_Store
