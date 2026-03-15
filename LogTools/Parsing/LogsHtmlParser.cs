@@ -63,16 +63,18 @@ public static partial class LogsHtmlParser
 
         Logger.LogDebug("ParseAdminActivity: parsing HTML ({ContentLength} chars)", html.Length);
 
-        var periodMatch = AdminPeriodRegex().Match(WebUtility.HtmlDecode(html));
-        if (!periodMatch.Success)
+        var minPeriodMatch = AdminPeriodInputRegex("min_period").Match(html);
+        var maxPeriodMatch = AdminPeriodInputRegex("max_period").Match(html);
+
+        if (!minPeriodMatch.Success || !maxPeriodMatch.Success)
         {
-            Logger.LogWarning("ParseAdminActivity: period not found in HTML");
+            Logger.LogWarning("ParseAdminActivity: period inputs not found in HTML");
             throw new HtmlParsingException("Admin activity period was not found.");
         }
 
         var period = (
-            ParseDateTime(periodMatch.Groups["from"].Value),
-            ParseDateTime(periodMatch.Groups["to"].Value));
+            ParseDateTime(WebUtility.HtmlDecode(minPeriodMatch.Groups["value"].Value)),
+            ParseDateTime(WebUtility.HtmlDecode(maxPeriodMatch.Groups["value"].Value)));
 
         Logger.LogDebug("ParseAdminActivity: period {From} — {To}",
             period.Item1.ToString("yyyy-MM-dd"), period.Item2.ToString("yyyy-MM-dd"));
@@ -80,20 +82,30 @@ public static partial class LogsHtmlParser
         var tbody = HtmlFragmentReader.ExtractFirstTagInnerHtml(html, "tbody")
             ?? throw new HtmlParsingException("Admin activity table was not found.");
 
-        var entries = HtmlFragmentReader.ExtractTableRows(tbody)
-            .Select(ParseAdminActivityEntry)
-            .Where(static entry => entry is not null)
-            .Cast<AdminActivityEntry>()
-            .ToArray();
+        var hiddenBlocks = HtmlFragmentReader.ExtractElementsByClass(tbody, "app__hidden");
+        var cleanTbody = HtmlFragmentReader.RemoveElementsByClass(tbody, "app__hidden");
+
+        var rows = HtmlFragmentReader.ExtractTableRows(cleanTbody);
+        var entries = new List<AdminActivityEntry>(rows.Count);
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var hiddenHtml = i < hiddenBlocks.Count ? hiddenBlocks[i] : null;
+            var entry = ParseAdminActivityEntry(rows[i], hiddenHtml);
+            if (entry is not null)
+            {
+                entries.Add(entry);
+            }
+        }
 
         var metaInfo = new AdminActivityMetaInfo(
-            entries.Length,
+            entries.Count,
             Math.Max(0, (period.Item2 - period.Item1).Days),
             entries.Sum(static entry => entry.TotalReports),
             entries.Sum(static entry => entry.TotalBans));
 
         Logger.LogDebug("ParseAdminActivity: {EntryCount} admins, {TotalReports} reports, {TotalBans} bans",
-            entries.Length, metaInfo.TotalReports, metaInfo.TotalBans);
+            entries.Count, metaInfo.TotalReports, metaInfo.TotalBans);
 
         return new AdminActivityReport(period, entries, metaInfo);
     }
@@ -272,13 +284,16 @@ public static partial class LogsHtmlParser
             ParseInt(match.Groups["total"].Value));
     }
 
-    private static AdminActivityEntry? ParseAdminActivityEntry(string rowHtml)
+    private static AdminActivityEntry? ParseAdminActivityEntry(string rowHtml, string? hiddenHtml)
     {
         var cells = HtmlFragmentReader.ExtractTableCells(HtmlFragmentReader.ExtractInnerHtml(rowHtml), "td");
         if (cells.Count < 10)
         {
             return null;
         }
+
+        var details = ParseAdminActivityDetails(hiddenHtml);
+        var totalOnline = details.Aggregate(TimeSpan.Zero, static (acc, day) => acc + day.Online);
 
         return new AdminActivityEntry(
             HtmlFragmentReader.NormalizeText(cells[0]),
@@ -290,19 +305,18 @@ public static partial class LogsHtmlParser
             ParseInt(HtmlFragmentReader.NormalizeText(cells[6])),
             ParseInt(HtmlFragmentReader.NormalizeText(cells[7])),
             ParseInt(HtmlFragmentReader.NormalizeText(cells[8])),
-            HtmlFragmentReader.NormalizeText(cells[9]),
-            ParseAdminActivityDetails(rowHtml));
+            totalOnline,
+            details);
     }
 
-    private static IReadOnlyList<AdminActivityDay> ParseAdminActivityDetails(string rowHtml)
+    private static IReadOnlyList<AdminActivityDay> ParseAdminActivityDetails(string? hiddenHtml)
     {
-        var hiddenBlock = HtmlFragmentReader.ExtractFirstElementByClass(rowHtml, "app__hidden");
-        if (hiddenBlock is null)
+        if (string.IsNullOrWhiteSpace(hiddenHtml))
         {
             return Array.Empty<AdminActivityDay>();
         }
 
-        return HtmlFragmentReader.ExtractTableRows(HtmlFragmentReader.ExtractInnerHtml(hiddenBlock))
+        return HtmlFragmentReader.ExtractTableRows(HtmlFragmentReader.ExtractInnerHtml(hiddenHtml))
             .Skip(1)
             .Select(ParseAdminActivityDay)
             .Where(static detail => detail is not null)
@@ -352,9 +366,13 @@ public static partial class LogsHtmlParser
 
     private static TimeSpan ParseTimeSpan(string value)
     {
-        if (TimeSpan.TryParseExact(value, ["hh\\:mm\\:ss", "h\\:m\\:s"], CultureInfo.InvariantCulture, out var result))
+        var parts = value.Split(':');
+        if (parts.Length == 3
+            && int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var hours)
+            && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var minutes)
+            && int.TryParse(parts[2], NumberStyles.None, CultureInfo.InvariantCulture, out var seconds))
         {
-            return result;
+            return new TimeSpan(hours, minutes, seconds);
         }
 
         return TimeSpan.Parse(value, CultureInfo.InvariantCulture);
@@ -385,8 +403,9 @@ public static partial class LogsHtmlParser
     [GeneratedRegex(@"Показано\s+с\s+(?<start>\d+)\s+по\s+(?<end>\d+)\s+из\s+(?<total>\d+)", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex MetaInfoRegex();
 
-    [GeneratedRegex(@"Данные\s+от:\s*(?<from>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+до\s*(?<to>\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex AdminPeriodRegex();
+    private static Regex AdminPeriodInputRegex(string inputName) =>
+        new($"""<input[^>]*name=["']{Regex.Escape(inputName)}["'][^>]*value=["'](?<value>[^"']+)["']""",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline);
 
     [GeneratedRegex(@"Данные\s+за:\s*(?<date>\d{4}-\d{2}-\d{2})", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex TopDateRegex();

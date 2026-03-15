@@ -166,6 +166,7 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                 }
 
                 var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                response.Dispose();
                 Logger.LogDebug("Request completed: {RelativeUri}, {ContentLength} characters", request.RelativeUri, content.Length);
                 return content;
             }

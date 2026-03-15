@@ -15,7 +15,7 @@ public sealed record AdminActivityEntry(
     int TotalWarns,
     int TotalBans,
     int TotalThanks,
-    string TotalOnline,
+    TimeSpan TotalOnline,
     IReadOnlyList<AdminActivityDay> Details);
 
 public sealed record AdminActivityDay(
