@@ -9,7 +9,7 @@
 
 </div>
 
-`LogsParser` is a .NET 10 library for working with `arizonarp.logsparser.info`.
+`LogsParser` is a .NET library for working with `arizonarp.logsparser.info`.
 
 It is designed as a reusable integration library first:
 - parse logs, admin activity, and top operations
@@ -35,9 +35,9 @@ It is designed as a reusable integration library first:
 - `Microsoft.Extensions.Logging` integration
 - domain-specific exceptions
 
-## Target Framework
+## Target Frameworks
 
-- `.NET 10`
+- `.NET 7`, `.NET 8`, `.NET 9`, `.NET 10`
 - C# `latest`
 
 ## Project Structure
@@ -62,15 +62,19 @@ Main entry points:
 
 ## Installation
 
-Project reference:
+NuGet:
+
+```
+dotnet add package LogsParser
+```
+
+Or via `ProjectReference`:
 
 ```xml
 <ItemGroup>
   <ProjectReference Include="..\LogTools\LogTools.csproj" />
 </ItemGroup>
 ```
-
-The same public API can later be packed and consumed as a NuGet package.
 
 ## Quick Start
 

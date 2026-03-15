@@ -9,7 +9,7 @@
 
 </div>
 
-`LogsParser` это библиотека на .NET 10 для работы с `arizonarp.logsparser.info`.
+`LogsParser` это библиотека на .NET для работы с `arizonarp.logsparser.info`.
 
 Библиотека изначально проектировалась как переиспользуемый integration layer:
 - парсинг логов, активности администрации и top-операций
@@ -35,9 +35,9 @@
 - интеграция с `Microsoft.Extensions.Logging`
 - доменные исключения
 
-## Целевая платформа
+## Целевые платформы
 
-- `.NET 10`
+- `.NET 7`, `.NET 8`, `.NET 9`, `.NET 10`
 - C# `latest`
 
 ## Структура проекта
@@ -62,15 +62,19 @@ LogTools/
 
 ## Подключение
 
-Через `ProjectReference`:
+NuGet:
+
+```
+dotnet add package LogsParser
+```
+
+Или через `ProjectReference`:
 
 ```xml
 <ItemGroup>
   <ProjectReference Include="..\LogTools\LogTools.csproj" />
 </ItemGroup>
 ```
-
-Позже тот же публичный API можно упаковать и использовать как NuGet-пакет.
 
 ## Быстрый старт
 
