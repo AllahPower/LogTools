@@ -128,6 +128,18 @@ internal static partial class HtmlFragmentReader
         return blocks;
     }
 
+    public static string RemoveElementsByClass(string html, string className)
+    {
+        var blocks = ExtractElementsByClass(html, className);
+        var result = html;
+        foreach (var block in blocks)
+        {
+            result = result.Replace(block, string.Empty, StringComparison.Ordinal);
+        }
+
+        return result;
+    }
+
     public static string ExtractInnerHtml(string outerHtml)
     {
         var openTagEnd = outerHtml.IndexOf('>');

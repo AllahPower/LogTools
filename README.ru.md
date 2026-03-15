@@ -1,13 +1,8 @@
-<div align="center">
-
-<img src="logo.png" alt="LogsParser logo" width="180" height="180" />
+![LogsParser logo](https://raw.githubusercontent.com/AllahPower/LogTools/main/logo.png)
 
 # LogsParser
 
-[![English](https://img.shields.io/badge/EN-🇺🇸-informational)](README.md)
-[![Русский](https://img.shields.io/badge/RU-🇷🇺-informational)](README.ru.md)
-
-</div>
+[![English](https://img.shields.io/badge/EN-🇺🇸-informational)](README.md) [![Русский](https://img.shields.io/badge/RU-🇷🇺-informational)](README.ru.md)
 
 `LogsParser` это библиотека на .NET для работы с `arizonarp.logsparser.info`.
 
