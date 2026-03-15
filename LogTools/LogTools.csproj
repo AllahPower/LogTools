@@ -5,11 +5,11 @@
     <AssemblyName>LogsParser</AssemblyName>
     <RootNamespace>LogsParser</RootNamespace>
     <PackageId>LogsParser</PackageId>
-    <Version>1.0.1</Version>
-    <PackageVersion>1.0.1</PackageVersion>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
-    <InformationalVersion>1.0.1</InformationalVersion>
+    <Version>1.1.0</Version>
+    <PackageVersion>1.1.0</PackageVersion>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <InformationalVersion>1.1.0</InformationalVersion>
     <Title>LogsParser</Title>
     <Description>.NET library for authentication, log parsing, account inspection, and filter catalog access on arizonarp.logsparser.info.</Description>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -34,8 +34,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.5" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
   </ItemGroup>
 
 </Project>
