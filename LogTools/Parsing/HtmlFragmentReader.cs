@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using LogsParser.Infrastructure;
 
 namespace LogsParser.Parsing;
 
@@ -92,7 +93,7 @@ internal static partial class HtmlFragmentReader
 
     public static IReadOnlyList<string> ExtractTableCells(string html, string tagName)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(tagName);
+        ThrowHelper.ThrowIfNullOrWhiteSpace(tagName);
 
         return LooseTableCellRegex(tagName).Matches(html)
             .Select(static match => match.Value)

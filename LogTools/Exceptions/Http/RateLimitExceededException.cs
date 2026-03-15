@@ -30,8 +30,10 @@ public sealed class RateLimitExceededException : LogsParserHttpException
         RetryAfterSeconds = info.GetInt32(nameof(RetryAfterSeconds));
     }
 
+#pragma warning disable CS0809
     [Obsolete("Formatter-based serialization is obsolete.")]
     public override void GetObjectData(SerializationInfo info, StreamingContext context)
+#pragma warning restore CS0809
     {
         ArgumentNullException.ThrowIfNull(info);
         info.AddValue(nameof(RetryAfterSeconds), RetryAfterSeconds);

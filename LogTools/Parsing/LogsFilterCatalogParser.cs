@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using LogsParser.Infrastructure;
 using LogsParser.Models;
 
 namespace LogsParser.Parsing;
@@ -7,7 +8,7 @@ public static partial class LogsFilterCatalogParser
 {
     public static LogsFilterCatalog Parse(string html)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(html);
+        ThrowHelper.ThrowIfNullOrWhiteSpace(html);
 
         var typeSelect = ExtractTypeSelect(html);
         var filterOptions = ParseFilterOptions(typeSelect);

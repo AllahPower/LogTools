@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using LogsParser.Diagnostics;
 using LogsParser.Exceptions;
+using LogsParser.Infrastructure;
 using LogsParser.Models;
 using LogsParser.Parsing;
 
@@ -15,7 +16,7 @@ public static partial class LogsHtmlParser
 
     public static LogsPage ParseLogs(string html)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(html);
+        ThrowHelper.ThrowIfNullOrWhiteSpace(html);
 
         Logger.LogDebug("ParseLogs: parsing HTML ({ContentLength} chars)", html.Length);
 
@@ -58,7 +59,7 @@ public static partial class LogsHtmlParser
 
     public static AdminActivityReport ParseAdminActivity(string html)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(html);
+        ThrowHelper.ThrowIfNullOrWhiteSpace(html);
 
         Logger.LogDebug("ParseAdminActivity: parsing HTML ({ContentLength} chars)", html.Length);
 
@@ -99,7 +100,7 @@ public static partial class LogsHtmlParser
 
     public static TopOperationsReport ParseTopOperations(string html)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(html);
+        ThrowHelper.ThrowIfNullOrWhiteSpace(html);
 
         Logger.LogDebug("ParseTopOperations: parsing HTML ({ContentLength} chars)", html.Length);
 

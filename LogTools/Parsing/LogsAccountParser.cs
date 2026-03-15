@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using LogsParser.Infrastructure;
 using LogsParser.Models;
 
 namespace LogsParser.Parsing;
@@ -8,7 +9,7 @@ internal static partial class LogsAccountParser
 {
     public static LogsAccount? Parse(string html)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(html);
+        ThrowHelper.ThrowIfNullOrWhiteSpace(html);
 
         var nickname = ParseNickname(html);
         var badges = ParseBadges(html);
