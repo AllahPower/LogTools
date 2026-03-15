@@ -26,16 +26,21 @@ internal sealed partial class LogsParserAuthenticator
 
     public async Task AuthenticateAsync(CancellationToken cancellationToken)
     {
+        Logger.LogInformation("Starting authentication flow for login {Login}", _credentials.Login);
+
+        Logger.LogDebug("Step 1/4: GET /login — loading login page");
         var loginPageResponse = await SendGetAsync("login", cancellationToken).ConfigureAwait(false);
         if (!loginPageResponse.IsSuccessStatusCode)
         {
-            Logger.LogError("Failed to open login page. StatusCode: {StatusCode}", loginPageResponse.StatusCode);
+            Logger.LogError("Failed to load login page: StatusCode={StatusCode}", (int)loginPageResponse.StatusCode);
             throw new AuthenticationFailedException("Failed to open login page.");
         }
 
         var loginPageContent = await loginPageResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var loginCsrf = ExtractCsrfToken(loginPageContent);
+        Logger.LogTrace("CSRF token extracted from login page ({TokenLength} chars)", loginCsrf.Length);
 
+        Logger.LogDebug("Step 2/4: POST /login — submitting credentials for {Login}", _credentials.Login);
         var loginResponse = await SendPostAsync(
             "login",
             new Dictionary<string, string>
@@ -48,23 +53,30 @@ internal sealed partial class LogsParserAuthenticator
 
         if (loginResponse.Headers.Location?.AbsolutePath == "/login")
         {
-            Logger.LogWarning("LogsParser authentication failed for login {Login}.", _credentials.Login);
+            Logger.LogWarning("Authentication failed for {Login}: redirected back to /login (invalid credentials)", _credentials.Login);
             throw new AuthenticationFailedException("Login or password is invalid.");
         }
 
+        Logger.LogDebug("Step 2/4: login accepted, redirect to {Location}", loginResponse.Headers.Location?.AbsolutePath);
+
+        Logger.LogDebug("Step 3/4: GET /authenticator — loading 2FA page");
         var authenticatorPageResponse = await SendGetAsync("authenticator", cancellationToken).ConfigureAwait(false);
         if (!authenticatorPageResponse.IsSuccessStatusCode)
         {
             Logger.LogError(
-                "Failed to open authenticator page for login {Login}. StatusCode: {StatusCode}",
+                "Failed to load authenticator page for {Login}: StatusCode={StatusCode}",
                 _credentials.Login,
-                authenticatorPageResponse.StatusCode);
+                (int)authenticatorPageResponse.StatusCode);
             throw new TwoFactorAuthenticationException("Failed to open authenticator page.");
         }
 
         var authenticatorPageContent = await authenticatorPageResponse.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var authenticatorCsrf = ExtractCsrfToken(authenticatorPageContent);
+        Logger.LogTrace("CSRF token extracted from authenticator page ({TokenLength} chars)", authenticatorCsrf.Length);
+
+        Logger.LogDebug("Step 4/4: POST /authenticator — submitting TOTP code for {Login}", _credentials.Login);
         var totpCode = GenerateTotp(_credentials.TotpSecret);
+        Logger.LogTrace("TOTP code generated ({CodeLength} digits)", totpCode.Length);
 
         var authenticatorResponse = await SendPostAsync(
             "authenticator",
@@ -77,11 +89,11 @@ internal sealed partial class LogsParserAuthenticator
 
         if (authenticatorResponse.Headers.Location?.AbsolutePath == "/authenticator")
         {
-            Logger.LogWarning("TOTP code was rejected for login {Login}.", _credentials.Login);
+            Logger.LogWarning("TOTP code rejected for {Login}: redirected back to /authenticator", _credentials.Login);
             throw new TwoFactorAuthenticationException("TOTP code was rejected.");
         }
 
-        Logger.LogInformation("LogsParser authentication completed for login {Login}.", _credentials.Login);
+        Logger.LogInformation("Authentication completed successfully for {Login}", _credentials.Login);
     }
 
     private async Task<HttpResponseMessage> SendGetAsync(string relativeUri, CancellationToken cancellationToken)
@@ -89,8 +101,11 @@ internal sealed partial class LogsParserAuthenticator
         using var request = new HttpRequestMessage(HttpMethod.Get, relativeUri);
         _cookieStorage.ApplyTo(request.Headers);
 
+        Logger.LogTrace("Auth GET {RelativeUri} (cookies: {CookieCount})", relativeUri, _cookieStorage.GetCookies().Count);
         var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         _cookieStorage.UpdateFrom(response.Headers);
+
+        Logger.LogTrace("Auth GET {RelativeUri} → {StatusCode}", relativeUri, (int)response.StatusCode);
         return response;
     }
 
@@ -105,8 +120,14 @@ internal sealed partial class LogsParserAuthenticator
         };
 
         _cookieStorage.ApplyTo(request.Headers);
+
+        Logger.LogTrace("Auth POST {RelativeUri} (cookies: {CookieCount}, fields: {FieldCount})",
+            relativeUri, _cookieStorage.GetCookies().Count, data.Count);
         var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         _cookieStorage.UpdateFrom(response.Headers);
+
+        Logger.LogTrace("Auth POST {RelativeUri} → {StatusCode}, Location={Location}",
+            relativeUri, (int)response.StatusCode, response.Headers.Location?.AbsolutePath);
         return response;
     }
 
@@ -115,7 +136,7 @@ internal sealed partial class LogsParserAuthenticator
         var match = CsrfRegex().Match(html);
         if (!match.Success)
         {
-            Logger.LogError("CSRF token was not found in response content.");
+            Logger.LogError("CSRF token not found in HTML response ({ContentLength} chars)", html.Length);
             throw new CsrfTokenNotFoundException("CSRF token was not found in the response.");
         }
 

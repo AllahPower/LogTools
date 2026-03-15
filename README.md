@@ -316,6 +316,9 @@ Transport and configuration models:
 Response models:
 - `LogsPage`
 - `LogEntry`
+- `LogParticipant` — per-participant data (Money, Bank, Donate, AdditionalInfo, LastIp, RegistrationIp)
+- `LogAdditionalInfo` — extended account data (AccountId, VC, SubAccount1–6, Deposit, AdminLevel)
+- `LogPageMetaInfo`
 - `LogsAccount`
 - `LogsAccountBadge`
 - `LogsAccountServer`
@@ -325,16 +328,42 @@ Response models:
 - `AdminActivityReport`
 - `TopOperationsReport`
 
+Each `LogEntry` contains `Sender` (I) and `Target` (II) as `LogParticipant?`. When a log record involves two participants, both are populated with their own financial data, additional info, and IP addresses.
+
 All public models are immutable `record` types.
 
 ## Logging
 
-The library uses `Microsoft.Extensions.Logging`.
+The library uses `Microsoft.Extensions.Logging` through an internal `LogsParserLogging` facade with thread-safe logger caching.
 
-That means:
-- the host can route logs into `Serilog`, `NLog`, or any other provider
-- the library does not require a direct `Serilog` dependency in every module
-- if no logger is configured, it safely falls back to `NullLogger`
+### DI Mode
+
+Logging is configured automatically when `ILoggerFactory` is registered in the DI container:
+
+```csharp
+services.AddLogging(builder => builder.AddConsole());
+services.AddLogsParser(options => { /* ... */ });
+```
+
+### Manual Mode
+
+```csharp
+using LogsParser.Diagnostics;
+
+LogsParserLogging.UseLoggerFactory(myLoggerFactory);
+```
+
+### Log Levels
+
+| Level | What is logged |
+|---|---|
+| `Trace` | Cookie operations, CSRF token extraction, individual HTTP requests, rate limit changes |
+| `Debug` | API call parameters, HTML content sizes, parsing summaries, auth flow steps |
+| `Information` | API call results (entry counts), auth flow start/completion, React challenge bypass |
+| `Warning` | Rate limit exceeded, transient retries, TOTP rejection, missing account info |
+| `Error` | HTTP failures, account configuration errors, unparseable challenge pages |
+
+If no logger is configured, the library safely falls back to `NullLogger`.
 
 ## Exceptions
 

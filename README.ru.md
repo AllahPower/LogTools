@@ -316,6 +316,9 @@ var parsed = LogsHtmlParser.ParseLogs(html);
 Модели ответов:
 - `LogsPage`
 - `LogEntry`
+- `LogParticipant` — данные участника (Money, Bank, Donate, AdditionalInfo, LastIp, RegistrationIp)
+- `LogAdditionalInfo` — расширенные данные аккаунта (AccountId, VC, SubAccount1–6, Deposit, AdminLevel)
+- `LogPageMetaInfo`
 - `LogsAccount`
 - `LogsAccountBadge`
 - `LogsAccountServer`
@@ -325,16 +328,42 @@ var parsed = LogsHtmlParser.ParseLogs(html);
 - `AdminActivityReport`
 - `TopOperationsReport`
 
+Каждая `LogEntry` содержит `Sender` (I) и `Target` (II) как `LogParticipant?`. Когда запись лога затрагивает двух участников, оба заполняются собственными финансовыми данными, дополнительной информацией и IP-адресами.
+
 Все публичные модели это неизменяемые `record`-типы.
 
 ## Логирование
 
-Библиотека использует `Microsoft.Extensions.Logging`.
+Библиотека использует `Microsoft.Extensions.Logging` через внутренний фасад `LogsParserLogging` с потокобезопасным кешированием логгеров.
 
-Это означает:
-- хост может направлять логи в `Serilog`, `NLog` или любой другой provider
-- библиотека не требует прямой зависимости на `Serilog` в каждом модуле
-- если logger не настроен, используется безопасный fallback на `NullLogger`
+### Режим DI
+
+Логирование настраивается автоматически, если `ILoggerFactory` зарегистрирован в DI-контейнере:
+
+```csharp
+services.AddLogging(builder => builder.AddConsole());
+services.AddLogsParser(options => { /* ... */ });
+```
+
+### Ручной режим
+
+```csharp
+using LogsParser.Diagnostics;
+
+LogsParserLogging.UseLoggerFactory(myLoggerFactory);
+```
+
+### Уровни логирования
+
+| Уровень | Что логируется |
+|---|---|
+| `Trace` | Операции с cookies, извлечение CSRF-токенов, каждый HTTP-запрос, изменения rate limit |
+| `Debug` | Параметры API-вызовов, размер HTML, статистика парсинга, шаги auth flow |
+| `Information` | Результаты API-вызовов (кол-во записей), начало/завершение авторизации, обход React challenge |
+| `Warning` | Превышение rate limit, повторные попытки, отклонение TOTP, отсутствие данных аккаунта |
+| `Error` | Ошибки HTTP, ошибки конфигурации аккаунта, нераспознанные challenge-страницы |
+
+Если логгер не настроен, библиотека безопасно использует `NullLogger`.
 
 ## Исключения
 

@@ -62,6 +62,14 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
         }
 
         _credentials = credentials;
+
+        Logger.LogDebug(
+            "LogsParserHttpDataSource initialized: BaseUri={BaseUri}, HasCredentials={HasCredentials}, MaxRetryAttempts={MaxRetryAttempts}, CookieStorage={CookieStorageType}, HttpClient={HttpClientSource}",
+            _options.BaseUri,
+            _credentials is not null,
+            _options.MaxRetryAttempts,
+            _defaultCookieStorage.GetType().Name,
+            httpClient is null ? "internal" : "external");
     }
 
     public int RateLimitMax { get; private set; }
@@ -75,6 +83,8 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
         var cookieStorage = request.CookieStorage ?? _defaultCookieStorage;
         var retryAttempt = 0;
 
+        Logger.LogDebug("GetContentAsync: requesting {RelativeUri}", request.RelativeUri);
+
         while (retryAttempt < _options.MaxRetryAttempts && !cancellationToken.IsCancellationRequested)
         {
             HttpResponseMessage? response = null;
@@ -84,16 +94,23 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                 using var message = new HttpRequestMessage(HttpMethod.Get, request.RelativeUri);
                 cookieStorage.ApplyTo(message.Headers);
 
+                Logger.LogTrace("Sending GET {RelativeUri} (attempt {Attempt}/{MaxAttempts})",
+                    request.RelativeUri, retryAttempt + 1, _options.MaxRetryAttempts);
+
                 response = await _httpClient.SendAsync(message, cancellationToken).ConfigureAwait(false);
                 cookieStorage.UpdateFrom(response.Headers);
                 UpdateRateLimits(response.Headers);
 
+                Logger.LogTrace("Response {RelativeUri}: StatusCode={StatusCode}, RateLimit={Remaining}/{Max}",
+                    request.RelativeUri, (int)response.StatusCode, RateLimitRemaining, RateLimitMax);
+
                 if (response.StatusCode == HttpStatusCode.OK &&
                     await ReactShieldBypass.IsReactChallengeAsync(response, cancellationToken).ConfigureAwait(false))
                 {
-                    Logger.LogInformation("React challenge detected for request {RelativeUri}.", request.RelativeUri);
+                    Logger.LogInformation("React challenge detected for {RelativeUri}, solving...", request.RelativeUri);
                     var reactToken = await ReactShieldBypass.SolveAsync(response, cancellationToken).ConfigureAwait(false);
                     cookieStorage.Upsert(new ParserCookie("R3ACTLB", reactToken));
+                    Logger.LogDebug("React challenge solved for {RelativeUri}, retrying request", request.RelativeUri);
                     response.Dispose();
                     continue;
                 }
@@ -105,20 +122,21 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
 
                     if (_credentials is null)
                     {
-                        Logger.LogWarning("Authentication required for request {RelativeUri}, but credentials are missing.", request.RelativeUri);
+                        Logger.LogWarning("Authentication required for {RelativeUri} but no credentials configured", request.RelativeUri);
                         throw new AuthenticationRequiredException("The service requested authentication, but credentials were not configured.");
                     }
 
-                    Logger.LogInformation("Authentication required for request {RelativeUri}. Starting auth flow.", request.RelativeUri);
+                    Logger.LogInformation("Authentication required for {RelativeUri}, starting auth flow...", request.RelativeUri);
                     var authenticator = new LogsParserAuthenticator(_httpClient, cookieStorage, _credentials);
                     await authenticator.AuthenticateAsync(cancellationToken).ConfigureAwait(false);
+                    Logger.LogDebug("Auth flow completed for {RelativeUri}, retrying request", request.RelativeUri);
                     continue;
                 }
 
                 if (response.StatusCode == HttpStatusCode.Found &&
                     response.Headers.Location?.AbsolutePath == "/profile")
                 {
-                    Logger.LogError("Account configuration error for request {RelativeUri}. Redirected to /profile.", request.RelativeUri);
+                    Logger.LogError("Account not configured: redirected to /profile for {RelativeUri}", request.RelativeUri);
                     throw new AccountConfigurationException("The logsparser account is not configured and was redirected to profile.");
                 }
 
@@ -126,10 +144,8 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                 {
                     var retryAfter = ResolveRetryAfterSeconds(response.Headers, retryAttempt);
                     Logger.LogWarning(
-                        "Rate limit exceeded for request {RelativeUri}. RetryAfterSeconds: {RetryAfterSeconds}. Attempt: {Attempt}",
-                        request.RelativeUri,
-                        retryAfter,
-                        retryAttempt + 1);
+                        "Rate limit exceeded for {RelativeUri}: retrying in {RetryAfterSeconds}s (attempt {Attempt}/{MaxAttempts})",
+                        request.RelativeUri, retryAfter, retryAttempt + 1, _options.MaxRetryAttempts);
                     response.Dispose();
                     retryAttempt++;
 
@@ -144,16 +160,14 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    Logger.LogError(
-                        "Request {RelativeUri} failed with status code {StatusCode}.",
-                        request.RelativeUri,
-                        response.StatusCode);
+                    Logger.LogError("Request failed: {RelativeUri} returned {StatusCode}", request.RelativeUri, (int)response.StatusCode);
                     throw new LogsParserHttpException(
                         $"Request to '{request.RelativeUri}' failed with status code {(int)response.StatusCode} ({response.StatusCode}).");
                 }
 
-                Logger.LogDebug("Request {RelativeUri} completed successfully.", request.RelativeUri);
-                return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                Logger.LogDebug("Request completed: {RelativeUri}, {ContentLength} characters", request.RelativeUri, content.Length);
+                return content;
             }
             catch (LogsParserException)
             {
@@ -174,21 +188,22 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                 {
                     Logger.LogError(
                         exception,
-                        "Request {RelativeUri} failed after {MaxRetryAttempts} attempts.",
-                        request.RelativeUri,
-                        _options.MaxRetryAttempts);
+                        "Request failed after {MaxRetryAttempts} attempts: {RelativeUri}",
+                        _options.MaxRetryAttempts,
+                        request.RelativeUri);
                     throw new LogsParserHttpException(
                         $"Request to '{request.RelativeUri}' failed after {_options.MaxRetryAttempts} attempts.",
                         exception);
                 }
 
+                var delay = TimeSpan.FromSeconds(Math.Pow(2, retryAttempt));
                 Logger.LogWarning(
                     exception,
-                    "Transient failure for request {RelativeUri}. Retrying attempt {Attempt}/{MaxRetryAttempts}.",
+                    "Transient failure for {RelativeUri}: retrying in {DelaySeconds}s (attempt {Attempt}/{MaxAttempts})",
                     request.RelativeUri,
+                    delay.TotalSeconds,
                     retryAttempt,
                     _options.MaxRetryAttempts);
-                var delay = TimeSpan.FromSeconds(Math.Pow(2, retryAttempt));
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -200,12 +215,15 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
     {
         if (_disposeHttpClient)
         {
+            Logger.LogTrace("Disposing internal HttpClient");
             _httpClient.Dispose();
         }
     }
 
     private void UpdateRateLimits(HttpResponseHeaders headers)
     {
+        var previousRemaining = RateLimitRemaining;
+
         if (headers.TryGetValues("X-Ratelimit-Limit", out var rateLimitValues) &&
             int.TryParse(rateLimitValues.FirstOrDefault(), out var rateLimitMax))
         {
@@ -216,6 +234,11 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
             int.TryParse(remainingValues.FirstOrDefault(), out var remaining))
         {
             RateLimitRemaining = remaining;
+        }
+
+        if (previousRemaining != RateLimitRemaining)
+        {
+            Logger.LogTrace("Rate limit updated: {Remaining}/{Max}", RateLimitRemaining, RateLimitMax);
         }
     }
 

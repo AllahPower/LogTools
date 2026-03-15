@@ -17,36 +17,64 @@ public static partial class LogsHtmlParser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(html);
 
+        Logger.LogDebug("ParseLogs: parsing HTML ({ContentLength} chars)", html.Length);
+
         var account = LogsAccountParser.Parse(html);
         var tbody = HtmlFragmentReader.ExtractFirstTagInnerHtml(html, "tbody");
         if (string.IsNullOrWhiteSpace(tbody))
         {
+            Logger.LogDebug("ParseLogs: no <tbody> found, returning empty result");
             return new LogsPage(Array.Empty<LogEntry>(), ParseMetaInfo(html), account);
         }
 
-        var entries = HtmlFragmentReader.ExtractTableRows(tbody)
-            .Select(ParseLogEntry)
-            .Where(static entry => entry is not null)
-            .Cast<LogEntry>()
-            .ToArray();
+        var rows = HtmlFragmentReader.ExtractTableRows(tbody);
+        var skipped = 0;
+        var withSender = 0;
+        var withTarget = 0;
 
-        return new LogsPage(entries, ParseMetaInfo(html), account);
+        var entries = new List<LogEntry>(rows.Count);
+        foreach (var row in rows)
+        {
+            var entry = ParseLogEntry(row);
+            if (entry is null)
+            {
+                skipped++;
+                continue;
+            }
+
+            entries.Add(entry);
+            if (entry.Sender is not null) withSender++;
+            if (entry.Target is not null) withTarget++;
+        }
+
+        var metaInfo = ParseMetaInfo(html);
+
+        Logger.LogDebug(
+            "ParseLogs: {EntryCount} entries parsed, {Skipped} rows skipped, {WithSender} with sender, {WithTarget} with target",
+            entries.Count, skipped, withSender, withTarget);
+
+        return new LogsPage(entries, metaInfo, account);
     }
 
     public static AdminActivityReport ParseAdminActivity(string html)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(html);
 
+        Logger.LogDebug("ParseAdminActivity: parsing HTML ({ContentLength} chars)", html.Length);
+
         var periodMatch = AdminPeriodRegex().Match(WebUtility.HtmlDecode(html));
         if (!periodMatch.Success)
         {
-            Logger.LogWarning("Admin activity period was not found in source html.");
+            Logger.LogWarning("ParseAdminActivity: period not found in HTML");
             throw new HtmlParsingException("Admin activity period was not found.");
         }
 
         var period = (
             ParseDateTime(periodMatch.Groups["from"].Value),
             ParseDateTime(periodMatch.Groups["to"].Value));
+
+        Logger.LogDebug("ParseAdminActivity: period {From} — {To}",
+            period.Item1.ToString("yyyy-MM-dd"), period.Item2.ToString("yyyy-MM-dd"));
 
         var tbody = HtmlFragmentReader.ExtractFirstTagInnerHtml(html, "tbody")
             ?? throw new HtmlParsingException("Admin activity table was not found.");
@@ -63,6 +91,9 @@ public static partial class LogsHtmlParser
             entries.Sum(static entry => entry.TotalReports),
             entries.Sum(static entry => entry.TotalBans));
 
+        Logger.LogDebug("ParseAdminActivity: {EntryCount} admins, {TotalReports} reports, {TotalBans} bans",
+            entries.Length, metaInfo.TotalReports, metaInfo.TotalBans);
+
         return new AdminActivityReport(period, entries, metaInfo);
     }
 
@@ -70,10 +101,12 @@ public static partial class LogsHtmlParser
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(html);
 
+        Logger.LogDebug("ParseTopOperations: parsing HTML ({ContentLength} chars)", html.Length);
+
         var dateMatch = TopDateRegex().Match(WebUtility.HtmlDecode(html));
         if (!dateMatch.Success)
         {
-            Logger.LogWarning("Top operations date was not found in source html.");
+            Logger.LogWarning("ParseTopOperations: date not found in HTML");
             throw new HtmlParsingException("Top operations date was not found.");
         }
 
@@ -92,6 +125,9 @@ public static partial class LogsHtmlParser
             entries.Sum(static entry => entry.TotalTransactions),
             entries.Aggregate(0UL, static (acc, entry) => acc + entry.Sum));
 
+        Logger.LogDebug("ParseTopOperations: date={Date}, {EntryCount} entries, {TotalTransactions} transactions",
+            date, entries.Length, metaInfo.TotalTransactions);
+
         return new TopOperationsReport(date, entries, metaInfo);
     }
 
@@ -100,6 +136,7 @@ public static partial class LogsHtmlParser
         var cells = HtmlFragmentReader.ExtractTableCells(HtmlFragmentReader.ExtractInnerHtml(rowHtml), "td");
         if (cells.Count < 2)
         {
+            Logger.LogTrace("ParseLogEntry: skipping row with {CellCount} cells (need at least 2)", cells.Count);
             return null;
         }
 
@@ -202,6 +239,7 @@ public static partial class LogsHtmlParser
 
         if (liValues.Length < 10)
         {
+            Logger.LogTrace("ParseAdditionalInfoBlock: skipping block with {ValueCount} values (need 10)", liValues.Length);
             return null;
         }
 
@@ -223,6 +261,7 @@ public static partial class LogsHtmlParser
         var match = MetaInfoRegex().Match(WebUtility.HtmlDecode(html));
         if (!match.Success)
         {
+            Logger.LogTrace("ParseMetaInfo: pagination info not found in HTML");
             return null;
         }
 

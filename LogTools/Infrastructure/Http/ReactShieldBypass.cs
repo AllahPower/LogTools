@@ -29,8 +29,15 @@ internal static partial class ReactShieldBypass
         }
 
         var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return content.Contains("/vddosw3data.js", StringComparison.OrdinalIgnoreCase) ||
-               content.Contains("Please turn JavaScript on and reload the page.", StringComparison.OrdinalIgnoreCase);
+        var isChallenge = content.Contains("/vddosw3data.js", StringComparison.OrdinalIgnoreCase) ||
+                          content.Contains("Please turn JavaScript on and reload the page.", StringComparison.OrdinalIgnoreCase);
+
+        if (isChallenge)
+        {
+            Logger.LogDebug("React challenge detected: server=nginx, cache-control=no-cache, challenge page ({ContentLength} chars)", content.Length);
+        }
+
+        return isChallenge;
     }
 
     public static async Task<string> SolveAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -38,11 +45,16 @@ internal static partial class ReactShieldBypass
         try
         {
             var content = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+
+            Logger.LogDebug("Attempting to solve React challenge ({ContentLength} chars)", content.Length);
+
             if (TrySolveIndexedArrayChallenge(content, out var indexedToken))
             {
-                Logger.LogInformation("React challenge bypass completed successfully.");
+                Logger.LogInformation("React challenge solved via indexed array method");
                 return indexedToken;
             }
+
+            Logger.LogDebug("Indexed array method did not match, trying hex value extraction");
 
             var values = QuotedHexRegex().Matches(content)
                 .Select(static match => NormalizeHex(match.Groups["value"].Value))
@@ -50,24 +62,28 @@ internal static partial class ReactShieldBypass
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
 
+            Logger.LogDebug("Extracted {ValueCount} unique hex candidates from challenge page", values.Length);
+
             if (values.Length < 3)
             {
-                Logger.LogError("React challenge payload is incomplete. ValuesCount: {ValuesCount}", values.Length);
+                Logger.LogError("React challenge payload incomplete: need at least 3 hex values, found {ValueCount}", values.Length);
                 throw new ReactShieldBypassException("React challenge payload is incomplete.");
             }
 
+            var candidateCount = 0;
             foreach (var candidate in EnumerateCandidates(values))
             {
+                candidateCount++;
                 if (!TryDecrypt(candidate.KeyHex, candidate.IvHex, candidate.EncryptedHex, out var token))
                 {
                     continue;
                 }
 
-                Logger.LogInformation("React challenge bypass completed successfully.");
+                Logger.LogInformation("React challenge solved via brute-force decryption (candidate #{CandidateNumber})", candidateCount);
                 return token;
             }
 
-            Logger.LogError("No valid React challenge payload candidates were found. ValuesCount: {ValuesCount}", values.Length);
+            Logger.LogError("React challenge unsolvable: tried {CandidateCount} candidates from {ValueCount} hex values", candidateCount, values.Length);
             throw new ReactShieldBypassException("Failed to derive the React challenge token from the response payload.");
         }
         catch (LogsParserException)
@@ -76,7 +92,7 @@ internal static partial class ReactShieldBypass
         }
         catch (Exception exception)
         {
-            Logger.LogError(exception, "Failed to bypass React challenge.");
+            Logger.LogError(exception, "Unexpected error while solving React challenge");
             throw new ReactShieldBypassException("Failed to bypass React challenge.", exception);
         }
     }
@@ -97,12 +113,16 @@ internal static partial class ReactShieldBypass
 
         if (values.Length == 0)
         {
+            Logger.LogDebug("Indexed array found but contains no values");
             return false;
         }
+
+        Logger.LogDebug("Indexed array found with {ValueCount} entries", values.Length);
 
         var variableMatches = ToNumbersAssignmentRegex().Matches(content);
         if (variableMatches.Count < 3)
         {
+            Logger.LogDebug("Insufficient toNumbers assignments: found {Count}, need 3", variableMatches.Count);
             return false;
         }
 
@@ -138,6 +158,9 @@ internal static partial class ReactShieldBypass
             }
         }
 
+        Logger.LogTrace("Indexed array resolved: key={HasKey}, iv={HasIv}, encrypted={HasEncrypted}",
+            keyHex is not null, ivHex is not null, encryptedHex is not null);
+
         return !string.IsNullOrWhiteSpace(keyHex) &&
                !string.IsNullOrWhiteSpace(ivHex) &&
                !string.IsNullOrWhiteSpace(encryptedHex) &&
@@ -149,6 +172,9 @@ internal static partial class ReactShieldBypass
         var keyCandidates = values.Where(static value => IsHex(value) && value.Length is 32 or 48 or 64).ToArray();
         var ivCandidates = values.Where(static value => IsHex(value) && value.Length == 32).ToArray();
         var encryptedCandidates = values.Where(static value => IsHex(value) && value.Length >= 32 && value.Length % 32 == 0).ToArray();
+
+        Logger.LogDebug("Brute-force candidates: {KeyCount} keys, {IvCount} IVs, {EncryptedCount} payloads",
+            keyCandidates.Length, ivCandidates.Length, encryptedCandidates.Length);
 
         foreach (var keyHex in keyCandidates)
         {
