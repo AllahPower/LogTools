@@ -11,5 +11,4 @@ public sealed record LogsFilterDefinition(
 
 public sealed record LogsFilterAdditionalParameter(
     string QueryKey,
-    string Label,
-    string? Placeholder = null);
+    string Label);

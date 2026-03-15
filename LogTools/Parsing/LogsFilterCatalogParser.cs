@@ -62,10 +62,6 @@ public static partial class LogsFilterCatalogParser
             var filterCode = HtmlFragmentReader.NormalizeText(match.Groups["filter"].Value);
             var queryKey = HtmlFragmentReader.NormalizeText(match.Groups["name"].Value);
             var label = HtmlFragmentReader.NormalizeText(match.Groups["label"].Value);
-            var placeholder = match.Groups["placeholder"].Success
-                ? HtmlFragmentReader.NormalizeText(match.Groups["placeholder"].Value)
-                : null;
-
             if (string.IsNullOrWhiteSpace(filterCode) || string.IsNullOrWhiteSpace(queryKey))
             {
                 continue;
@@ -77,7 +73,7 @@ public static partial class LogsFilterCatalogParser
                 result[filterCode] = parameters;
             }
 
-            parameters.Add(new LogsFilterAdditionalParameter(queryKey, label, placeholder));
+            parameters.Add(new LogsFilterAdditionalParameter(queryKey, label));
         }
 
         return result.ToDictionary(
@@ -94,6 +90,6 @@ public static partial class LogsFilterCatalogParser
     [GeneratedRegex("""<option[^>]*value=["'](?<value>[^"']+)["'][^>]*>(?<label>.*?)</option>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex OptionRegex();
 
-    [GeneratedRegex("""<div[^>]*class=["'][^"']*js_component_filter_item[^"']*["'][^>]*data-filter-type=["'](?<filter>[^"']+)["'][^>]*>.*?<label[^>]*>(?<label>.*?)</label>.*?<(?:input|select|textarea)[^>]*name=["'](?<name>[^"']+)["'][^>]*?(?:placeholder=["'](?<placeholder>[^"']*)["'])?[^>]*>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex("""<div[^>]*class=["'][^"']*js_component_filter_item[^"']*["'][^>]*data-filter-type=["'](?<filter>[^"']+)["'][^>]*>.*?<label[^>]*>(?<label>.*?)</label>.*?<(?:input|select|textarea)[^>]*name=["'](?<name>[^"']+)["'][^>]*>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex DynamicParameterBlockRegex();
 }
