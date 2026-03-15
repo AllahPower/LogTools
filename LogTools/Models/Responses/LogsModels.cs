@@ -9,25 +9,27 @@ public sealed record LogEntry(
     DateTime Timestamp,
     string Text,
     string Html,
-    int? Money = null,
-    int? Bank = null,
-    int? Donate = null,
+    LogParticipant? Sender = null,
+    LogParticipant? Target = null);
+
+public sealed record LogParticipant(
+    long? Money = null,
+    long? Bank = null,
+    long? Donate = null,
     LogAdditionalInfo? AdditionalInfo = null,
-    LogParticipant? Target = null,
-    LogParticipant? Sender = null);
+    string? LastIp = null,
+    string? RegistrationIp = null);
 
 public sealed record LogAdditionalInfo(
-    int HouseId,
-    long HouseCash,
-    long BusinessCash,
-    long WarehouseCash,
-    long FamilyCash,
-    long PersonalVehiclesCost,
-    long BusinessVehiclesCost,
-    long OtherAssetsValue,
-    long Deposits,
-    int Reputation);
-
-public sealed record LogParticipant(string LastIp, string RegistrationIp);
+    long AccountId,
+    long VC,
+    long SubAccount1,
+    long SubAccount2,
+    long SubAccount3,
+    long SubAccount4,
+    long SubAccount5,
+    long SubAccount6,
+    long Deposit,
+    int AdminLevel);
 
 public sealed record LogPageMetaInfo(int Start, int End, int Total);

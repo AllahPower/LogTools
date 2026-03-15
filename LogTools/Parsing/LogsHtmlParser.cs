@@ -107,47 +107,93 @@ public static partial class LogsHtmlParser
         var logHtml = HtmlFragmentReader.ExtractInnerHtml(cells[1]).Trim();
         var logText = HtmlFragmentReader.NormalizeText(logHtml);
 
-        int? money = null;
-        int? bank = null;
-        int? donate = null;
-        LogAdditionalInfo? additionalInfo = null;
-        LogParticipant? target = null;
-        LogParticipant? sender = null;
+        long? senderMoney = null, senderBank = null, senderDonate = null;
+        long? targetMoney = null, targetBank = null, targetDonate = null;
+        LogAdditionalInfo? senderInfo = null, targetInfo = null;
 
         if (cells.Count >= 3)
         {
-            var codeValues = HtmlFragmentReader.ExtractTopLevelBlocks(HtmlFragmentReader.ExtractInnerHtml(cells[2]), "code")
-                .Select(HtmlFragmentReader.ExtractInnerHtml)
-                .Select(HtmlFragmentReader.NormalizeText)
-                .ToArray();
+            var dataHtml = cells[2];
 
-            if (codeValues.Length >= 4)
+            foreach (Match match in ParticipantDataRegex().Matches(dataHtml))
             {
-                money = ParseInt(codeValues[1]);
-                bank = ParseInt(codeValues[2]);
-                donate = ParseInt(codeValues[3]);
+                var marker = match.Groups["marker"].Value;
+                var money = ParseLong(HtmlFragmentReader.NormalizeText(match.Groups["money"].Value));
+                var bank = ParseLong(HtmlFragmentReader.NormalizeText(match.Groups["bank"].Value));
+                var donate = ParseLong(HtmlFragmentReader.NormalizeText(match.Groups["donate"].Value));
+
+                if (string.Equals(marker, "I", StringComparison.Ordinal))
+                {
+                    senderMoney = money;
+                    senderBank = bank;
+                    senderDonate = donate;
+                }
+                else if (string.Equals(marker, "II", StringComparison.Ordinal))
+                {
+                    targetMoney = money;
+                    targetBank = bank;
+                    targetDonate = donate;
+                }
             }
 
-            additionalInfo = ParseAdditionalInfo(cells[2]);
+            var hiddenBlocks = HtmlFragmentReader.ExtractElementsByClass(dataHtml, "app__hidden");
+            if (hiddenBlocks.Count >= 1)
+            {
+                senderInfo = ParseAdditionalInfoBlock(hiddenBlocks[0]);
+            }
+
+            if (hiddenBlocks.Count >= 2)
+            {
+                targetInfo = ParseAdditionalInfoBlock(hiddenBlocks[1]);
+            }
         }
+
+        string? senderLastIp = null, senderRegIp = null;
+        string? targetLastIp = null, targetRegIp = null;
 
         if (cells.Count >= 4)
         {
-            (sender, target) = ParseParticipants(cells[3]);
+            foreach (var element in HtmlFragmentReader.ExtractElementsByClass(cells[3], "table-ip"))
+            {
+                var innerHtml = HtmlFragmentReader.ExtractInnerHtml(element);
+                var codes = HtmlFragmentReader.ExtractTopLevelBlocks(innerHtml, "code");
+                var links = HtmlFragmentReader.ExtractTopLevelBlocks(innerHtml, "a");
+                if (codes.Count == 0 || links.Count < 2)
+                {
+                    continue;
+                }
+
+                var kind = HtmlFragmentReader.NormalizeText(HtmlFragmentReader.ExtractInnerHtml(codes[0]));
+                var lastIp = HtmlFragmentReader.NormalizeText(HtmlFragmentReader.ExtractInnerHtml(links[0]));
+                var registrationIp = HtmlFragmentReader.NormalizeText(HtmlFragmentReader.ExtractInnerHtml(links[1]));
+
+                if (string.Equals(kind, "I:", StringComparison.OrdinalIgnoreCase))
+                {
+                    senderLastIp = lastIp;
+                    senderRegIp = registrationIp;
+                }
+                else if (string.Equals(kind, "II:", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetLastIp = lastIp;
+                    targetRegIp = registrationIp;
+                }
+            }
         }
 
-        return new LogEntry(timestamp, logText, logHtml, money, bank, donate, additionalInfo, target, sender);
+        var sender = senderMoney.HasValue || senderInfo is not null || senderLastIp is not null
+            ? new LogParticipant(senderMoney, senderBank, senderDonate, senderInfo, senderLastIp, senderRegIp)
+            : null;
+
+        var target = targetMoney.HasValue || targetInfo is not null || targetLastIp is not null
+            ? new LogParticipant(targetMoney, targetBank, targetDonate, targetInfo, targetLastIp, targetRegIp)
+            : null;
+
+        return new LogEntry(timestamp, logText, logHtml, sender, target);
     }
 
-    private static LogAdditionalInfo? ParseAdditionalInfo(string accountCellHtml)
+    private static LogAdditionalInfo? ParseAdditionalInfoBlock(string hiddenBlockHtml)
     {
-        var hiddenBlock = HtmlFragmentReader.ExtractFirstElementByClass(accountCellHtml, "app__hidden");
-        if (hiddenBlock is null)
-        {
-            return null;
-        }
-
-        var liValues = HtmlFragmentReader.ExtractTopLevelBlocks(HtmlFragmentReader.ExtractInnerHtml(hiddenBlock), "li")
+        var liValues = HtmlFragmentReader.ExtractTopLevelBlocks(HtmlFragmentReader.ExtractInnerHtml(hiddenBlockHtml), "li")
             .SelectMany(static li =>
                 HtmlFragmentReader.ExtractTopLevelBlocks(HtmlFragmentReader.ExtractInnerHtml(li), "code")
                     .Select(HtmlFragmentReader.ExtractInnerHtml)
@@ -160,7 +206,7 @@ public static partial class LogsHtmlParser
         }
 
         return new LogAdditionalInfo(
-            ParseInt(liValues[0]),
+            ParseLong(liValues[0]),
             ParseLong(liValues[1]),
             ParseLong(liValues[2]),
             ParseLong(liValues[3]),
@@ -170,39 +216,6 @@ public static partial class LogsHtmlParser
             ParseLong(liValues[7]),
             ParseLong(liValues[8]),
             ParseInt(liValues[9]));
-    }
-
-    private static (LogParticipant? Sender, LogParticipant? Target) ParseParticipants(string participantsCellHtml)
-    {
-        LogParticipant? sender = null;
-        LogParticipant? target = null;
-
-        foreach (var element in HtmlFragmentReader.ExtractElementsByClass(participantsCellHtml, "table-ip"))
-        {
-            var innerHtml = HtmlFragmentReader.ExtractInnerHtml(element);
-            var codes = HtmlFragmentReader.ExtractTopLevelBlocks(innerHtml, "code");
-            var links = HtmlFragmentReader.ExtractTopLevelBlocks(innerHtml, "a");
-            if (codes.Count == 0 || links.Count < 2)
-            {
-                continue;
-            }
-
-            var kind = HtmlFragmentReader.NormalizeText(HtmlFragmentReader.ExtractInnerHtml(codes[0]));
-            var lastIp = HtmlFragmentReader.NormalizeText(HtmlFragmentReader.ExtractInnerHtml(links[0]));
-            var registrationIp = HtmlFragmentReader.NormalizeText(HtmlFragmentReader.ExtractInnerHtml(links[1]));
-            var participant = new LogParticipant(lastIp, registrationIp);
-
-            if (string.Equals(kind, "I:", StringComparison.OrdinalIgnoreCase))
-            {
-                sender = participant;
-            }
-            else if (string.Equals(kind, "II:", StringComparison.OrdinalIgnoreCase))
-            {
-                target = participant;
-            }
-        }
-
-        return (sender, target);
     }
 
     private static LogPageMetaInfo? ParseMetaInfo(string html)
@@ -337,4 +350,7 @@ public static partial class LogsHtmlParser
 
     [GeneratedRegex(@"Данные\s+за:\s*(?<date>\d{4}-\d{2}-\d{2})", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex TopDateRegex();
+
+    [GeneratedRegex(@"<code><strong>(?<marker>I{1,2}):</strong></code>\s*<code>(?<money>[^<]+)</code>\s*/\s*<code>(?<bank>[^<]+)</code>\s*/\s*<code>(?<donate>[^<]+)</code>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ParticipantDataRegex();
 }
