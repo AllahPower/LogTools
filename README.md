@@ -150,14 +150,15 @@ new LogsParserCredentials(
 
 ### Getting `TotpSecret`
 
-If the account is protected by TOTP and you do not have the raw secret yet, a practical approach is:
+If the account is protected by TOTP and you do not have the raw secret yet:
 
-1. export the authenticator profile / migration payload from the authenticator app
-2. decode the exported payload
-3. use the decoded secret as `TotpSecret`
-
-Recommended decoder:
-- `otpauth-migration-decoder`: https://github.com/digitalduke/otpauth-migration-decoder
+1. Open Google Authenticator → **Transfer accounts** → **Export accounts**
+2. Scan the generated QR code with any QR reader to get the `otpauth-migration://offline?data=...` URI
+3. Decode the URI using [`otpauth-migration-decoder`](https://github.com/digitalduke/otpauth-migration-decoder):
+   ```bash
+   python decoder.py decode --migration "otpauth-migration://offline?data=..."
+   ```
+4. The output will contain standard `otpauth://totp/...?secret=BASE32SECRET&...` links — use the `secret` parameter value as `TotpSecret`
 
 The library does not extract the secret for you. It only consumes the final Base32 secret string.
 

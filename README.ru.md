@@ -150,14 +150,15 @@ new LogsParserCredentials(
 
 ### Как получить `TotpSecret`
 
-Если аккаунт защищён TOTP и у вас нет сырого секрета, практический сценарий такой:
+Если аккаунт защищён TOTP и у вас нет сырого секрета:
 
-1. экспортировать профиль / migration payload из приложения-аутентификатора
-2. декодировать экспортированные данные
-3. использовать полученный секрет как `TotpSecret`
-
-Рекомендуемая утилита:
-- `otpauth-migration-decoder`: https://github.com/digitalduke/otpauth-migration-decoder
+1. Откройте Google Authenticator → **Перенос аккаунтов** → **Экспорт аккаунтов**
+2. Отсканируйте сгенерированный QR-код любым QR-ридером — получите URI вида `otpauth-migration://offline?data=...`
+3. Декодируйте URI с помощью [`otpauth-migration-decoder`](https://github.com/digitalduke/otpauth-migration-decoder):
+   ```bash
+   python decoder.py decode --migration "otpauth-migration://offline?data=..."
+   ```
+4. На выходе будут стандартные ссылки `otpauth://totp/...?secret=BASE32SECRET&...` — значение параметра `secret` и есть `TotpSecret`
 
 Библиотека сама не извлекает секрет. Она принимает уже готовую Base32-строку секрета.
 
