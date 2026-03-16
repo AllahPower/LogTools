@@ -76,6 +76,8 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
 
     public int RateLimitRemaining { get; private set; }
 
+    public DateTimeOffset? RateLimitReset { get; private set; }
+
     public async Task<string> GetContentAsync(ParserRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -237,9 +239,16 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
             RateLimitRemaining = remaining;
         }
 
+        if (headers.TryGetValues("X-Ratelimit-Reset", out var resetValues) &&
+            long.TryParse(resetValues.FirstOrDefault(), out var resetUnix) &&
+            resetUnix > 0)
+        {
+            RateLimitReset = DateTimeOffset.FromUnixTimeSeconds(resetUnix);
+        }
+
         if (previousRemaining != RateLimitRemaining)
         {
-            Logger.LogTrace("Rate limit updated: {Remaining}/{Max}", RateLimitRemaining, RateLimitMax);
+            Logger.LogTrace("Rate limit updated: {Remaining}/{Max}, Reset={Reset}", RateLimitRemaining, RateLimitMax, RateLimitReset);
         }
     }
 
