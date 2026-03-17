@@ -353,8 +353,8 @@ public static partial class LogsHtmlParser
         return new TopOperationsEntry(
             HtmlFragmentReader.NormalizeText(cells[0]),
             ParseInt(HtmlFragmentReader.NormalizeText(cells[1])),
-            IPAddress.Parse(HtmlFragmentReader.NormalizeText(cells[2])),
-            IPAddress.Parse(HtmlFragmentReader.NormalizeText(cells[3])),
+            ParseIPAddress(HtmlFragmentReader.NormalizeText(cells[2])),
+            ParseIPAddress(HtmlFragmentReader.NormalizeText(cells[3])),
             ParseInt(HtmlFragmentReader.NormalizeText(cells[4])),
             ParseUnsignedLong(HtmlFragmentReader.NormalizeText(cells[5])));
     }
@@ -391,6 +391,17 @@ public static partial class LogsHtmlParser
     private static ulong ParseUnsignedLong(string value)
     {
         return ulong.Parse(CleanNumeric(value), CultureInfo.InvariantCulture);
+    }
+
+    private static IPAddress ParseIPAddress(string value)
+    {
+        if (IPAddress.TryParse(value, out var address))
+        {
+            return address;
+        }
+
+        Logger.LogWarning("Failed to parse IP address: '{RawValue}', using loopback fallback", value);
+        return IPAddress.Loopback;
     }
 
     private static string CleanNumeric(string value)
