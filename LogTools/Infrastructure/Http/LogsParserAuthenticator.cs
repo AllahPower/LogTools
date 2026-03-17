@@ -177,12 +177,12 @@ internal sealed partial class LogsParserAuthenticator
     private static long GetJuneauTimestamp()
     {
         var utcNow = DateTimeOffset.UtcNow;
-        var juneauTimeZone = TryResolveTimeZone("America/Juneau", "Alaskan Standard Time");
+        var juneauTimeZone = ResolveTimeZone("America/Juneau", "Alaskan Standard Time");
         var juneauTime = TimeZoneInfo.ConvertTime(utcNow, juneauTimeZone);
         return juneauTime.ToUnixTimeSeconds();
     }
 
-    private static TimeZoneInfo TryResolveTimeZone(params string[] ids)
+    private static TimeZoneInfo ResolveTimeZone(params string[] ids)
     {
         foreach (var id in ids)
         {
@@ -192,10 +192,12 @@ internal sealed partial class LogsParserAuthenticator
             }
             catch (TimeZoneNotFoundException)
             {
+                Logger.LogTrace("TimeZone '{TimeZoneId}' not found on this system", id);
             }
         }
 
-        return TimeZoneInfo.Utc;
+        throw new TwoFactorAuthenticationException(
+            $"None of the required time zones found: {string.Join(", ", ids)}. TOTP generation requires a valid time zone.");
     }
 
     private static byte[] DecodeBase32(string input)
