@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using LogsParser.Abstractions;
@@ -9,6 +10,7 @@ namespace LogsParser.Net;
 internal static class CookieStorageExtensions
 {
     private static ILogger Logger => LogsParserLogging.CreateLogger(nameof(CookieStorageExtensions));
+    private static readonly ConditionalWeakTable<ICookieStorage, object> _locks = new();
 
     public static void ApplyTo(this ICookieStorage storage, HttpRequestHeaders headers)
     {
@@ -33,40 +35,50 @@ internal static class CookieStorageExtensions
             return;
         }
 
-        var current = storage.GetCookies()
-            .ToDictionary(static cookie => cookie.Name, static cookie => cookie.Value, StringComparer.Ordinal);
+        var sync = _locks.GetOrCreateValue(storage);
 
-        var updatedCount = 0;
-        foreach (var rawHeader in values)
+        lock (sync)
         {
-            var cookie = ParseSetCookie(rawHeader);
-            if (cookie is not null)
+            var current = storage.GetCookies()
+                .ToDictionary(static cookie => cookie.Name, static cookie => cookie.Value, StringComparer.Ordinal);
+
+            var updatedCount = 0;
+            foreach (var rawHeader in values)
             {
-                var isNew = !current.ContainsKey(cookie.Value.Key);
-                current[cookie.Value.Key] = cookie.Value.Value;
-                updatedCount++;
+                var cookie = ParseSetCookie(rawHeader);
+                if (cookie is not null)
+                {
+                    var isNew = !current.ContainsKey(cookie.Value.Key);
+                    current[cookie.Value.Key] = cookie.Value.Value;
+                    updatedCount++;
 
-                Logger.LogTrace("Cookie {Action}: {CookieName}", isNew ? "added" : "updated", cookie.Value.Key);
+                    Logger.LogTrace("Cookie {Action}: {CookieName}", isNew ? "added" : "updated", cookie.Value.Key);
+                }
             }
-        }
 
-        if (updatedCount > 0)
-        {
-            storage.SetCookies(current.Select(static pair => new ParserCookie(pair.Key, pair.Value)).ToArray());
-            Logger.LogTrace("Cookie storage updated: {UpdatedCount} cookies changed, {TotalCount} total", updatedCount, current.Count);
+            if (updatedCount > 0)
+            {
+                storage.SetCookies(current.Select(static pair => new ParserCookie(pair.Key, pair.Value)).ToArray());
+                Logger.LogTrace("Cookie storage updated: {UpdatedCount} cookies changed, {TotalCount} total", updatedCount, current.Count);
+            }
         }
     }
 
     public static void Upsert(this ICookieStorage storage, ParserCookie cookie)
     {
-        var cookies = storage.GetCookies()
-            .ToDictionary(static existing => existing.Name, static existing => existing.Value, StringComparer.Ordinal);
+        var sync = _locks.GetOrCreateValue(storage);
 
-        var isNew = !cookies.ContainsKey(cookie.Name);
-        cookies[cookie.Name] = cookie.Value;
-        storage.SetCookies(cookies.Select(static pair => new ParserCookie(pair.Key, pair.Value)).ToArray());
+        lock (sync)
+        {
+            var cookies = storage.GetCookies()
+                .ToDictionary(static existing => existing.Name, static existing => existing.Value, StringComparer.Ordinal);
 
-        Logger.LogTrace("Cookie upsert: {Action} {CookieName} ({TotalCount} total)", isNew ? "added" : "updated", cookie.Name, cookies.Count);
+            var isNew = !cookies.ContainsKey(cookie.Name);
+            cookies[cookie.Name] = cookie.Value;
+            storage.SetCookies(cookies.Select(static pair => new ParserCookie(pair.Key, pair.Value)).ToArray());
+
+            Logger.LogTrace("Cookie upsert: {Action} {CookieName} ({TotalCount} total)", isNew ? "added" : "updated", cookie.Name, cookies.Count);
+        }
     }
 
     private static string Serialize(IReadOnlyCollection<ParserCookie> cookies)
