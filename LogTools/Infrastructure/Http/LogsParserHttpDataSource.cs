@@ -145,15 +145,36 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
                     var retryAfter = ResolveRetryAfterSeconds(response.Headers, retryAttempt);
+                    response.Dispose();
+
+                    if (!_options.WaitForRateLimitReset)
+                    {
+                        throw new RateLimitExceededException("Rate limit exceeded.", retryAfter, RateLimitReset);
+                    }
+
+                    if (RateLimitReset is { } resetAt)
+                    {
+                        var delay = resetAt - DateTimeOffset.UtcNow + TimeSpan.FromSeconds(1);
+
+                        if (delay > TimeSpan.Zero)
+                        {
+                            Logger.LogWarning(
+                                "Rate limit hit for {RelativeUri}, waiting until {ResetAt} ({DelaySeconds:F0}s)",
+                                request.RelativeUri, resetAt, delay.TotalSeconds);
+                            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
                     Logger.LogWarning(
                         "Rate limit exceeded for {RelativeUri}: retrying in {RetryAfterSeconds}s (attempt {Attempt}/{MaxAttempts})",
                         request.RelativeUri, retryAfter, retryAttempt + 1, _options.MaxRetryAttempts);
-                    response.Dispose();
                     retryAttempt++;
 
                     if (retryAttempt >= _options.MaxRetryAttempts)
                     {
-                        throw new RateLimitExceededException("Rate limit exceeded.", retryAfter);
+                        throw new RateLimitExceededException("Rate limit exceeded.", retryAfter, RateLimitReset);
                     }
 
                     await Task.Delay(TimeSpan.FromSeconds(retryAfter), cancellationToken).ConfigureAwait(false);
