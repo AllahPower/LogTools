@@ -25,7 +25,7 @@ It is designed as a reusable integration library first:
 - automatic login flow
 - TOTP 2FA support
 - automatic React challenge bypass
-- retry and rate-limit handling
+- retry and rate-limit handling with `X-Ratelimit-Reset` support
 - DI registration extensions
 - `Microsoft.Extensions.Logging` integration
 - domain-specific exceptions
@@ -174,6 +174,48 @@ The transport layer includes automatic anti-DDoS handling:
 - retry of the original request
 
 This behavior is internal to `LogsParserHttpDataSource`.
+
+## Rate Limiting
+
+`LogsParserHttpDataSource` tracks rate limit headers from the server:
+
+| Property | Header | Description |
+|---|---|---|
+| `RateLimitMax` | `X-Ratelimit-Limit` | Maximum requests allowed |
+| `RateLimitRemaining` | `X-Ratelimit-Remaining` | Remaining requests in current window |
+| `RateLimitReset` | `X-Ratelimit-Reset` | Exact time when the limit resets (Unix timestamp) |
+
+### Behavior on 429
+
+When a `429 Too Many Requests` response is received, the behavior depends on the `WaitForRateLimitReset` option:
+
+| `WaitForRateLimitReset` | Behavior |
+|---|---|
+| `true` (default) | Waits until the exact reset time from `X-Ratelimit-Reset` (+1s margin), then retries. This wait does **not** count as a retry attempt. Falls back to `Retry-After` / exponential backoff if the header is missing. |
+| `false` | Immediately throws `RateLimitExceededException` with `ResetAt` populated so the caller can decide when to retry. |
+
+Configuration:
+
+```csharp
+var options = new LogsParserHttpOptions
+{
+    WaitForRateLimitReset = true // default - wait for reset automatically
+};
+```
+
+Handling the exception when `WaitForRateLimitReset = false`:
+
+```csharp
+catch (RateLimitExceededException ex)
+{
+    Console.WriteLine($"Retry after: {ex.RetryAfterSeconds}s");
+
+    if (ex.ResetAt is { } resetAt)
+    {
+        Console.WriteLine($"Limit resets at: {resetAt:u}");
+    }
+}
+```
 
 ## Cookie Storage
 
@@ -405,6 +447,11 @@ catch (TwoFactorAuthenticationException)
 catch (RateLimitExceededException ex)
 {
     Console.WriteLine($"Retry after: {ex.RetryAfterSeconds}s");
+
+    if (ex.ResetAt is { } resetAt)
+    {
+        Console.WriteLine($"Limit resets at: {resetAt:u}");
+    }
 }
 catch (LogsParserException ex)
 {
@@ -421,7 +468,8 @@ services.AddLogsParser(options =>
     options.CookieStorageFactory = _ => new MemoryCookieStorage();
     options.HttpOptions = new LogsParserHttpOptions
     {
-        MaxRetryAttempts = 5
+        MaxRetryAttempts = 5,
+        WaitForRateLimitReset = true
     };
 });
 ```
