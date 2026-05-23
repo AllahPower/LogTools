@@ -411,7 +411,9 @@ public static partial class LogsHtmlParser
             .Trim();
     }
 
-    [GeneratedRegex(@"Показано\s+с\s+(?<start>\d+)\s+по\s+(?<end>\d+)\s+из\s+(?<total>\d+)", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    // Counts are wrapped in tags: "Показано с <strong>1</strong> по <strong>1000</strong> из <strong>39184796</strong>".
+    // HtmlDecode does not strip tags, so allow arbitrary markup between the keywords and the numbers.
+    [GeneratedRegex(@"Показано\s*с[\s\S]*?(?<start>\d+)[\s\S]*?по[\s\S]*?(?<end>\d+)[\s\S]*?из[\s\S]*?(?<total>\d+)", RegexOptions.IgnoreCase)]
     private static partial Regex MetaInfoRegex();
 
     private static Regex AdminPeriodInputRegex(string inputName) =>
