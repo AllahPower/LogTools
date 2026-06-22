@@ -59,10 +59,37 @@ internal sealed partial class LogsParserAuthenticator
 
         Logger.LogDebug("Step 2/4: login accepted, redirect to {Location}", loginResponse.Headers.Location?.AbsolutePath);
 
-        Logger.LogDebug("Step 3/4: GET /authenticator — loading 2FA page");
+        await ConfirmTwoFactorAsync(cancellationToken).ConfigureAwait(false);
+
+        Logger.LogInformation("Authentication completed successfully for {Login}", _credentials.Login);
+    }
+
+    /// <summary>
+    /// Performs only the second-factor (TOTP) confirmation. Used both as the tail of the full
+    /// login flow and on its own when an already authenticated session is redirected back to
+    /// <c>/authenticator</c> after its 2FA confirmation window lapses mid-session.
+    /// </summary>
+    public async Task ConfirmTwoFactorAsync(CancellationToken cancellationToken)
+    {
+        Logger.LogDebug("2FA: GET /authenticator — loading 2FA page");
         var authenticatorPageResponse = await SendGetAsync("authenticator", cancellationToken).ConfigureAwait(false);
         if (!authenticatorPageResponse.IsSuccessStatusCode)
         {
+            var location = authenticatorPageResponse.Headers.Location?.AbsolutePath;
+
+            // A redirect here means the 2FA form is not being served: either the first factor
+            // expired (→ /login) or the session is already confirmed (→ home). In both cases there
+            // is nothing to submit — let the caller retry the original request, which re-triggers
+            // the full login flow when the first factor is gone.
+            if (location is not null)
+            {
+                Logger.LogDebug(
+                    "2FA: /authenticator redirected to {Location} (status {StatusCode}); skipping TOTP submission",
+                    location,
+                    (int)authenticatorPageResponse.StatusCode);
+                return;
+            }
+
             Logger.LogError(
                 "Failed to load authenticator page for {Login}: StatusCode={StatusCode}",
                 _credentials.Login,
@@ -74,7 +101,7 @@ internal sealed partial class LogsParserAuthenticator
         var authenticatorCsrf = ExtractCsrfToken(authenticatorPageContent);
         Logger.LogTrace("CSRF token extracted from authenticator page ({TokenLength} chars)", authenticatorCsrf.Length);
 
-        Logger.LogDebug("Step 4/4: POST /authenticator — submitting TOTP code for {Login}", _credentials.Login);
+        Logger.LogDebug("2FA: POST /authenticator — submitting TOTP code for {Login}", _credentials.Login);
         var totpCode = GenerateTotp(_credentials.TotpSecret);
         Logger.LogTrace("TOTP code generated ({CodeLength} digits)", totpCode.Length);
 
@@ -93,7 +120,7 @@ internal sealed partial class LogsParserAuthenticator
             throw new TwoFactorAuthenticationException("TOTP code was rejected.");
         }
 
-        Logger.LogInformation("Authentication completed successfully for {Login}", _credentials.Login);
+        Logger.LogInformation("Two-factor confirmation completed for {Login}", _credentials.Login);
     }
 
     private async Task<HttpResponseMessage> SendGetAsync(string relativeUri, CancellationToken cancellationToken)
@@ -131,7 +158,7 @@ internal sealed partial class LogsParserAuthenticator
         return response;
     }
 
-    private static string ExtractCsrfToken(string html)
+    internal static string ExtractCsrfToken(string html)
     {
         var match = CsrfRegex().Match(html);
         if (!match.Success)
@@ -143,7 +170,12 @@ internal sealed partial class LogsParserAuthenticator
         return match.Groups["token"].Value;
     }
 
-    private static string GenerateTotp(string secret)
+    internal static string GenerateTotp(string secret)
+    {
+        return GenerateTotp(secret, GetJuneauTimestamp());
+    }
+
+    internal static string GenerateTotp(string secret, long unixTimeSeconds)
     {
         if (string.IsNullOrWhiteSpace(secret))
         {
@@ -151,8 +183,7 @@ internal sealed partial class LogsParserAuthenticator
         }
 
         var key = DecodeBase32(secret);
-        var timestamp = GetJuneauTimestamp();
-        var timestep = timestamp / 30;
+        var timestep = unixTimeSeconds / 30;
         Span<byte> counter = stackalloc byte[8];
 
         for (var index = 7; index >= 0; index--)

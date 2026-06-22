@@ -84,6 +84,8 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
 
         var cookieStorage = request.CookieStorage ?? _defaultCookieStorage;
         var retryAttempt = 0;
+        var authAttempts = 0;
+        const int maxAuthAttempts = 3;
 
         Logger.LogDebug("GetContentAsync: requesting {RelativeUri}", request.RelativeUri);
 
@@ -128,10 +130,43 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                         throw new AuthenticationRequiredException("The service requested authentication, but credentials were not configured.");
                     }
 
+                    if (++authAttempts > maxAuthAttempts)
+                    {
+                        Logger.LogError("Authentication did not stabilize for {RelativeUri} after {Attempts} attempts", request.RelativeUri, maxAuthAttempts);
+                        throw new AuthenticationFailedException("Authentication did not stabilize after multiple attempts.");
+                    }
+
                     Logger.LogInformation("Authentication required for {RelativeUri}, starting auth flow...", request.RelativeUri);
                     var authenticator = new LogsParserAuthenticator(_httpClient, cookieStorage, _credentials);
                     await authenticator.AuthenticateAsync(cancellationToken).ConfigureAwait(false);
                     Logger.LogDebug("Auth flow completed for {RelativeUri}, retrying request", request.RelativeUri);
+                    continue;
+                }
+
+                // An authenticated session whose 2FA confirmation window has lapsed is redirected
+                // to /authenticator (not /login): the first factor is still valid, so re-run only
+                // the TOTP confirmation instead of the whole login.
+                if (response.StatusCode == HttpStatusCode.Found &&
+                    response.Headers.Location?.AbsolutePath == "/authenticator")
+                {
+                    response.Dispose();
+
+                    if (_credentials is null)
+                    {
+                        Logger.LogWarning("Two-factor confirmation required for {RelativeUri} but no credentials configured", request.RelativeUri);
+                        throw new AuthenticationRequiredException("The service requested two-factor confirmation, but credentials were not configured.");
+                    }
+
+                    if (++authAttempts > maxAuthAttempts)
+                    {
+                        Logger.LogError("Two-factor confirmation did not stabilize for {RelativeUri} after {Attempts} attempts", request.RelativeUri, maxAuthAttempts);
+                        throw new TwoFactorAuthenticationException("Two-factor confirmation did not stabilize after multiple attempts.");
+                    }
+
+                    Logger.LogInformation("Two-factor confirmation required for {RelativeUri}, confirming...", request.RelativeUri);
+                    var authenticator = new LogsParserAuthenticator(_httpClient, cookieStorage, _credentials);
+                    await authenticator.ConfirmTwoFactorAsync(cancellationToken).ConfigureAwait(false);
+                    Logger.LogDebug("Two-factor confirmation completed for {RelativeUri}, retrying request", request.RelativeUri);
                     continue;
                 }
 

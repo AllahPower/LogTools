@@ -64,13 +64,19 @@ internal static partial class LogsAccountParser
 
     private static LogsAccountServer? ParseServer(Match match)
     {
-        var value = HtmlFragmentReader.NormalizeText(match.Groups["value"].Value);
-        var displayName = HtmlFragmentReader.NormalizeText(match.Groups["label"].Value);
-        if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
+        // Parse the value and the `selected` flag from the option's attributes independently so the
+        // result does not depend on attribute order (a greedy combined pattern would swallow
+        // `selected` whenever it followed `value`, leaving IsSelected always false).
+        var attributes = match.Groups["attrs"].Value;
+
+        var valueMatch = OptionValueRegex().Match(attributes);
+        if (!valueMatch.Success ||
+            !int.TryParse(valueMatch.Groups["value"].Value, NumberStyles.None, CultureInfo.InvariantCulture, out var id))
         {
             return null;
         }
 
+        var displayName = HtmlFragmentReader.NormalizeText(match.Groups["label"].Value);
         var name = displayName;
         var serverNameMatch = ServerDisplayNameRegex().Match(displayName);
         if (serverNameMatch.Success)
@@ -82,7 +88,7 @@ internal static partial class LogsAccountParser
             id,
             name,
             displayName,
-            match.Groups["selected"].Success);
+            OptionSelectedRegex().IsMatch(attributes));
     }
 
     [GeneratedRegex("""<ul[^>]*class=["'][^"']*\bnavbar-nav\b[^"']*\bms-auto\b[^"']*["'][^>]*>(?<content>.*?)</ul>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
@@ -97,8 +103,14 @@ internal static partial class LogsAccountParser
     [GeneratedRegex("""<select[^>]*name=["']server_number["'][^>]*>(?<content>.*?)</select>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex ServerSelectRegex();
 
-    [GeneratedRegex("""<option[^>]*value=["'](?<value>\d+)["'][^>]*(?<selected>\sselected(?:=["'][^"']*["'])?)?[^>]*>(?<label>.*?)</option>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    [GeneratedRegex("""<option(?<attrs>[^>]*)>(?<label>.*?)</option>""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex ServerOptionRegex();
+
+    [GeneratedRegex("""value=["'](?<value>\d+)["']""", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex OptionValueRegex();
+
+    [GeneratedRegex(@"\bselected\b", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex OptionSelectedRegex();
 
     [GeneratedRegex(@"^\[\d+\]\s*(?<name>.+)$", RegexOptions.IgnoreCase)]
     private static partial Regex ServerDisplayNameRegex();

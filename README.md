@@ -139,6 +139,10 @@ services.AddLogsParser(options =>
 7. submit 2FA code
 8. continue the original request
 
+If an already authenticated session keeps its login cookie but its 2FA window lapses, the site
+redirects data requests to `/authenticator` (not `/login`). In that case only the second-factor
+confirmation (steps 4–7) is re-run, without re-submitting the password.
+
 Credentials model:
 
 ```csharp
