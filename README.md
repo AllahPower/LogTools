@@ -2,7 +2,7 @@
 
 # LogsParser
 
-[![English](https://img.shields.io/badge/EN-🇺🇸-informational)](README.md) [![Русский](https://img.shields.io/badge/RU-🇷🇺-informational)](README.ru.md)
+[![English](https://img.shields.io/badge/EN-🇺🇸-informational)](README.md) [![Русский](https://img.shields.io/badge/RU-🇷🇺-informational)](README.ru.md) [![Wiki](https://img.shields.io/badge/docs-wiki-blue)](https://github.com/AllahPower/LogTools/wiki)
 
 `LogsParser` is a .NET library for working with `arizonarp.logsparser.info`.
 
@@ -14,6 +14,24 @@ It is designed as a reusable integration library first:
 - expose the current filters catalog and `dynamic[n]` additional parameters
 - keep cookie persistence under caller control
 - work both manually and through DI
+
+## Documentation
+
+This README is a condensed overview. The full API reference lives in the
+[project wiki](https://github.com/AllahPower/LogTools/wiki), in English and Russian:
+
+| Page | What it covers |
+|---|---|
+| [Getting Started](https://github.com/AllahPower/LogTools/wiki/Getting-Started) | Installation, namespaces, the first request in manual and DI mode |
+| [LogsParserClient](https://github.com/AllahPower/LogTools/wiki/LogsParserClient) | Every public method of the high-level facade |
+| [Requests and URI Builder](https://github.com/AllahPower/LogTools/wiki/Requests-and-URI-Builder) | Query models, validation and normalisation rules |
+| [Models](https://github.com/AllahPower/LogTools/wiki/Models) | Full reference for every public record |
+| [Parsers](https://github.com/AllahPower/LogTools/wiki/Parsers) | Parsing HTML without HTTP |
+| [Transport and Authentication](https://github.com/AllahPower/LogTools/wiki/Transport-and-Authentication) | Auth state machine, retries, rate limiting, React challenge |
+| [Cookie Storage](https://github.com/AllahPower/LogTools/wiki/Cookie-Storage) | The `ICookieStorage` contract and persisting a session |
+| [Dependency Injection](https://github.com/AllahPower/LogTools/wiki/Dependency-Injection) | Registration options and service lifetimes |
+| [Logging](https://github.com/AllahPower/LogTools/wiki/Logging) | Categories and level taxonomy |
+| [Exceptions](https://github.com/AllahPower/LogTools/wiki/Exceptions) | The exception hierarchy and how to handle it |
 
 ## Features
 

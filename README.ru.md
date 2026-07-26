@@ -2,7 +2,7 @@
 
 # LogsParser
 
-[![English](https://img.shields.io/badge/EN-🇺🇸-informational)](README.md) [![Русский](https://img.shields.io/badge/RU-🇷🇺-informational)](README.ru.md)
+[![English](https://img.shields.io/badge/EN-🇺🇸-informational)](README.md) [![Русский](https://img.shields.io/badge/RU-🇷🇺-informational)](README.ru.md) [![Wiki](https://img.shields.io/badge/docs-wiki-blue)](https://github.com/AllahPower/LogTools/wiki)
 
 `LogsParser` это библиотека на .NET для работы с `arizonarp.logsparser.info`.
 
@@ -14,6 +14,24 @@
 - получение текущего каталога фильтров и `dynamic[n]` дополнительных параметров
 - полное управление cookies на стороне вызывающего кода
 - работа как вручную, так и через DI
+
+## Документация
+
+Этот README — краткий обзор. Полный справочник по API находится в
+[вики проекта](https://github.com/AllahPower/LogTools/wiki), на русском и английском:
+
+| Страница | О чём она |
+|---|---|
+| [Начало работы](https://github.com/AllahPower/LogTools/wiki/Getting-Started-RU) | Установка, пространства имён, первый запрос вручную и через DI |
+| [LogsParserClient](https://github.com/AllahPower/LogTools/wiki/LogsParserClient-RU) | Все публичные методы high-level фасада |
+| [Запросы и построитель URI](https://github.com/AllahPower/LogTools/wiki/Requests-and-URI-Builder-RU) | Модели запросов, правила валидации и нормализации |
+| [Модели](https://github.com/AllahPower/LogTools/wiki/Models-RU) | Полный справочник по всем публичным record-типам |
+| [Парсеры](https://github.com/AllahPower/LogTools/wiki/Parsers-RU) | Разбор HTML без HTTP |
+| [Транспорт и авторизация](https://github.com/AllahPower/LogTools/wiki/Transport-and-Authentication-RU) | Автомат авторизации, retry, rate limit, React challenge |
+| [Хранение cookies](https://github.com/AllahPower/LogTools/wiki/Cookie-Storage-RU) | Контракт `ICookieStorage` и сохранение сессии |
+| [Внедрение зависимостей](https://github.com/AllahPower/LogTools/wiki/Dependency-Injection-RU) | Опции регистрации и времена жизни сервисов |
+| [Логирование](https://github.com/AllahPower/LogTools/wiki/Logging-RU) | Категории и уровни логов |
+| [Исключения](https://github.com/AllahPower/LogTools/wiki/Exceptions-RU) | Иерархия исключений и их обработка |
 
 ## Возможности
 
