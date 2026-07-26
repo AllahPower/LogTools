@@ -20,6 +20,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Required to mint the short-lived nuget.org key through trusted publishing.
+      id-token: write
 
     env:
       SHOULD_PUSH: ${{ github.event_name == 'release' || inputs.publish }}
@@ -70,11 +72,21 @@ jobs:
           path: artifacts/*.nupkg
           if-no-files-found: error
 
+      # Exchanges the workflow's OIDC token for a short-lived API key, so no NuGet key is
+      # stored in the repository. Requires a trusted publishing policy on nuget.org that names
+      # this owner, this repository and this workflow file.
+      - name: Sign in to nuget.org
+        if: env.SHOULD_PUSH == 'true'
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: AllahPower
+
       - name: Push to nuget.org
         if: env.SHOULD_PUSH == 'true'
         run: >
           dotnet nuget push artifacts/*.nupkg
-          --api-key "${{ secrets.NUGET_API_KEY }}"
+          --api-key "${{ steps.login.outputs.NUGET_API_KEY }}"
           --source https://api.nuget.org/v3/index.json
           --skip-duplicate
 
