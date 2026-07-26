@@ -12,6 +12,8 @@ namespace LogsParser;
 
 public static partial class LogsHtmlParser
 {
+    private const string HiddenBlockClass = "app__hidden";
+
     private static ILogger Logger => LogsParserLogging.CreateLogger(nameof(LogsHtmlParser));
 
     public static LogsPage ParseLogs(string html)
@@ -155,7 +157,15 @@ public static partial class LogsHtmlParser
 
         var timestamp = ParseDateTime(HtmlFragmentReader.NormalizeText(cells[0]));
         var logHtml = HtmlFragmentReader.ExtractInnerHtml(cells[1]).Trim();
-        var logText = HtmlFragmentReader.NormalizeText(logHtml);
+
+        // The action cell can carry blocks the site hides behind an eye toggle. They must not
+        // land in Text, which is meant to mirror what the page actually shows.
+        var revealedValues = ParseRevealedValues(logHtml);
+        var visibleHtml = revealedValues.Count == 0
+            ? logHtml
+            : HtmlFragmentReader.RemoveElementsByClass(logHtml, HiddenBlockClass);
+
+        var logText = HtmlFragmentReader.NormalizeText(visibleHtml);
 
         long? senderMoney = null, senderBank = null, senderDonate = null;
         long? targetMoney = null, targetBank = null, targetDonate = null;
@@ -164,37 +174,50 @@ public static partial class LogsHtmlParser
         if (cells.Count >= 3)
         {
             var dataHtml = cells[2];
+            var matches = ParticipantDataRegex().Matches(dataHtml);
 
-            foreach (Match match in ParticipantDataRegex().Matches(dataHtml))
+            for (var i = 0; i < matches.Count; i++)
             {
+                var match = matches[i];
                 var marker = match.Groups["marker"].Value;
                 var money = ParseLong(HtmlFragmentReader.NormalizeText(match.Groups["money"].Value));
                 var bank = ParseLong(HtmlFragmentReader.NormalizeText(match.Groups["bank"].Value));
                 var donate = ParseLong(HtmlFragmentReader.NormalizeText(match.Groups["donate"].Value));
+
+                // The hidden block belongs to the marker it follows, so scope the search to the
+                // span between this marker and the next one instead of pairing blocks by index.
+                var segmentEnd = i + 1 < matches.Count ? matches[i + 1].Index : dataHtml.Length;
+                var segment = dataHtml[match.Index..segmentEnd];
+                var info = ParseFirstAdditionalInfoBlock(segment);
 
                 if (string.Equals(marker, "I", StringComparison.Ordinal))
                 {
                     senderMoney = money;
                     senderBank = bank;
                     senderDonate = donate;
+                    senderInfo = info;
                 }
                 else if (string.Equals(marker, "II", StringComparison.Ordinal))
                 {
                     targetMoney = money;
                     targetBank = bank;
                     targetDonate = donate;
+                    targetInfo = info;
                 }
             }
 
-            var hiddenBlocks = HtmlFragmentReader.ExtractElementsByClass(dataHtml, "app__hidden");
-            if (hiddenBlocks.Count >= 1)
+            if (matches.Count == 0)
             {
-                senderInfo = ParseAdditionalInfoBlock(hiddenBlocks[0]);
-            }
+                var hiddenBlocks = HtmlFragmentReader.ExtractElementsByClass(dataHtml, HiddenBlockClass);
+                if (hiddenBlocks.Count >= 1)
+                {
+                    senderInfo = ParseAdditionalInfoBlock(hiddenBlocks[0]);
+                }
 
-            if (hiddenBlocks.Count >= 2)
-            {
-                targetInfo = ParseAdditionalInfoBlock(hiddenBlocks[1]);
+                if (hiddenBlocks.Count >= 2)
+                {
+                    targetInfo = ParseAdditionalInfoBlock(hiddenBlocks[1]);
+                }
             }
         }
 
@@ -238,7 +261,49 @@ public static partial class LogsHtmlParser
             ? new LogParticipant(targetMoney, targetBank, targetDonate, targetInfo, targetLastIp, targetRegIp)
             : null;
 
-        return new LogEntry(timestamp, logText, logHtml, sender, target);
+        return new LogEntry(timestamp, logText, logHtml, sender, target)
+        {
+            RevealedValues = revealedValues
+        };
+    }
+
+    private static IReadOnlyList<LogRevealedValue> ParseRevealedValues(string cellHtml)
+    {
+        var blocks = HtmlFragmentReader.ExtractElementsByClass(cellHtml, HiddenBlockClass);
+        if (blocks.Count == 0)
+        {
+            return Array.Empty<LogRevealedValue>();
+        }
+
+        var values = new List<LogRevealedValue>(blocks.Count);
+        foreach (var block in blocks)
+        {
+            var innerHtml = HtmlFragmentReader.ExtractInnerHtml(block).Trim();
+            if (innerHtml.Length == 0)
+            {
+                continue;
+            }
+
+            var label = HtmlFragmentReader.ExtractAttributeValue(block, "data-title") ?? string.Empty;
+            values.Add(new LogRevealedValue(
+                label,
+                HtmlFragmentReader.NormalizeMultilineText(innerHtml),
+                innerHtml));
+        }
+
+        if (values.Count == 0)
+        {
+            return Array.Empty<LogRevealedValue>();
+        }
+
+        Logger.LogTrace("ParseRevealedValues: {ValueCount} revealed values extracted", values.Count);
+        return values;
+    }
+
+    private static LogAdditionalInfo? ParseFirstAdditionalInfoBlock(string html)
+    {
+        var blocks = HtmlFragmentReader.ExtractElementsByClass(html, HiddenBlockClass);
+        return blocks.Count == 0 ? null : ParseAdditionalInfoBlock(blocks[0]);
     }
 
     private static LogAdditionalInfo? ParseAdditionalInfoBlock(string hiddenBlockHtml)

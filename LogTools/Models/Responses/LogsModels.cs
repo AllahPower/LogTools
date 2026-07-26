@@ -10,7 +10,17 @@ public sealed record LogEntry(
     string Text,
     string Html,
     LogParticipant? Sender = null,
-    LogParticipant? Target = null);
+    LogParticipant? Target = null)
+{
+    // Declared as an init property rather than a positional parameter so that adding it
+    // does not change the primary constructor arity or Deconstruct of a published record.
+    public IReadOnlyList<LogRevealedValue> RevealedValues { get; init; } = Array.Empty<LogRevealedValue>();
+}
+
+public sealed record LogRevealedValue(
+    string Label,
+    string Text,
+    string Html);
 
 public sealed record LogParticipant(
     long? Money = null,

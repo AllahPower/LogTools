@@ -263,6 +263,30 @@ var result = await client.GetLogsAsync(new LogsQuery(
 - page meta info when available
 - current account context in `LogsPage.Account`
 
+### Revealed Row Values
+
+Some log rows end with an eye toggle that reveals extra content on the page — most commonly
+under the `item_market` filter, where the visible text ends with `Готовый сет:` and the toggle
+reveals the contents of the set. Those values are parsed into `LogEntry.RevealedValues`:
+
+```csharp
+foreach (var entry in result.Entries)
+{
+    foreach (var value in entry.RevealedValues)
+    {
+        Console.WriteLine($"{value.Label}: {value.Text}");
+    }
+}
+```
+
+`LogRevealedValue` carries:
+- `Label` — the block caption taken from `data-title`, for example `Значение строки 1`
+- `Text` — the revealed content with its line structure preserved, so each item of a set stays on its own line
+- `Html` — the raw markup of the block
+
+`LogEntry.Text` holds only what the page actually shows and therefore excludes revealed
+content; `LogEntry.Html` still contains the complete cell markup.
+
 ### Get Current Account
 
 ```csharp
@@ -364,6 +388,7 @@ Response models:
 - `LogEntry`
 - `LogParticipant` — per-participant data (Money, Bank, Donate, AdditionalInfo, LastIp, RegistrationIp)
 - `LogAdditionalInfo` — extended account data (AccountId, VC, SubAccount1–6, Deposit, AdminLevel)
+- `LogRevealedValue` — content behind an eye toggle (Label, Text, Html)
 - `LogPageMetaInfo`
 - `LogsAccount`
 - `LogsAccountBadge`
@@ -374,7 +399,7 @@ Response models:
 - `AdminActivityReport`
 - `TopOperationsReport`
 
-Each `LogEntry` contains `Sender` (I) and `Target` (II) as `LogParticipant?`. When a log record involves two participants, both are populated with their own financial data, additional info, and IP addresses.
+Each `LogEntry` contains `Sender` (I) and `Target` (II) as `LogParticipant?`. When a log record involves two participants, both are populated with their own financial data, additional info, and IP addresses. Each participant is matched to the additional-info block that follows its own `I:` / `II:` marker, so a record that only has a target never has its data attributed to the sender.
 
 All public models are immutable `record` types.
 
