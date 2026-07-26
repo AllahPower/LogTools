@@ -3,6 +3,9 @@
 
 **/bin/
 **/obj/
+artifacts/
+*.nupkg
+*.snupkg
 
 *.user
 *.suo

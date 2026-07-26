@@ -1,0 +1,87 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Push to the feeds instead of only building and packing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      SHOULD_PUSH: ${{ github.event_name == 'release' || inputs.publish }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Read the package version
+        id: version
+        run: |
+          version=$(sed -n 's:.*<PackageVersion>\(.*\)</PackageVersion>.*:\1:p' LogTools/LogTools.csproj | head -1)
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "PackageVersion is $version"
+
+      # A release whose tag disagrees with the csproj would publish a version nobody can trace
+      # back to a commit, and NuGet versions cannot be replaced afterwards.
+      - name: Verify the tag matches the package version
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          if [ "${TAG#v}" != "$VERSION" ]; then
+            echo "::error::Release tag $TAG does not match PackageVersion $VERSION"
+            exit 1
+          fi
+
+      - name: Restore
+        run: dotnet restore LogTools.slnx
+
+      - name: Build
+        run: dotnet build LogTools.slnx -c Release --no-restore
+
+      # Category!=Live excludes the integration tests that authenticate against the real site.
+      - name: Test
+        run: dotnet test LogTools.slnx -c Release --no-build --filter "Category!=Live"
+
+      - name: Pack
+        run: dotnet pack LogTools/LogTools.csproj -c Release --no-build -o artifacts
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LogsParser.${{ steps.version.outputs.value }}
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+
+      - name: Push to nuget.org
+        if: env.SHOULD_PUSH == 'true'
+        run: >
+          dotnet nuget push artifacts/*.nupkg
+          --api-key "${{ secrets.NUGET_API_KEY }}"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Push to GitHub Packages
+        if: env.SHOULD_PUSH == 'true'
+        run: >
+          dotnet nuget push artifacts/*.nupkg
+          --api-key "${{ secrets.GITHUB_TOKEN }}"
+          --source https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+          --skip-duplicate
