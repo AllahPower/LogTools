@@ -85,7 +85,9 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
         var cookieStorage = request.CookieStorage ?? _defaultCookieStorage;
         var retryAttempt = 0;
         var authAttempts = 0;
+        var challengeAttempts = 0;
         const int maxAuthAttempts = 3;
+        const int maxChallengeAttempts = 3;
 
         Logger.LogDebug("GetContentAsync: requesting {RelativeUri}", request.RelativeUri);
 
@@ -112,6 +114,20 @@ public sealed class LogsParserHttpDataSource : ILogsParserDataSource, IDisposabl
                     await ReactShieldBypass.IsReactChallengeAsync(response, cancellationToken).ConfigureAwait(false))
                 {
                     Logger.LogInformation("React challenge detected for {RelativeUri}, solving...", request.RelativeUri);
+
+                    // The challenge plaintext carries no structure, so a solved token cannot be
+                    // verified before it is used. A wrong token simply yields another challenge,
+                    // which would spin forever without a bound of its own: solving deliberately
+                    // does not consume a retry attempt.
+                    if (++challengeAttempts > maxChallengeAttempts)
+                    {
+                        response.Dispose();
+                        Logger.LogError("React challenge kept being served for {RelativeUri} after {Attempts} solved tokens",
+                            request.RelativeUri, maxChallengeAttempts);
+                        throw new ReactShieldBypassException(
+                            $"The service kept serving the React challenge after {maxChallengeAttempts} solved tokens.");
+                    }
+
                     var reactToken = await ReactShieldBypass.SolveAsync(response, cancellationToken).ConfigureAwait(false);
                     cookieStorage.Upsert(new ParserCookie("R3ACTLB", reactToken));
                     Logger.LogDebug("React challenge solved for {RelativeUri}, retrying request", request.RelativeUri);

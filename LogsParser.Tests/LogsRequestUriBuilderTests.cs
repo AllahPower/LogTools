@@ -18,6 +18,26 @@ public class LogsRequestUriBuilderTests
         Assert.Contains("page=1", uri);
     }
 
+    [Theory]
+    [InlineData("desc")]
+    [InlineData("asc")]
+    [InlineData("ASC")]
+    public void Accepts_the_two_orderings_the_toolbar_offers(string sort)
+    {
+        var uri = LogsRequestUriBuilder.BuildLogsUri(new LogsQuery(18, Sort: sort));
+
+        Assert.Contains($"sort={sort.ToLowerInvariant()}", uri);
+    }
+
+    [Theory]
+    [InlineData("descending")]
+    [InlineData("newest")]
+    [InlineData("")]
+    public void Rejects_unsupported_sort(string sort)
+    {
+        Assert.Throws<ArgumentException>(() => LogsRequestUriBuilder.BuildLogsUri(new LogsQuery(18, Sort: sort)));
+    }
+
     [Fact]
     public void Encodes_filters_as_type_array()
     {

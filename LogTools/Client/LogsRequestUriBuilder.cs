@@ -17,6 +17,14 @@ public static partial class LogsRequestUriBuilder
         1000
     ];
 
+    // The logs toolbar offers exactly these two orderings; anything else is silently ignored
+    // by the service, which would hand back a different ordering than the caller asked for.
+    private static readonly HashSet<string> SupportedSortValues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "desc",
+        "asc"
+    };
+
     private static readonly HashSet<string> ReservedParameterKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "server_number",
@@ -43,7 +51,7 @@ public static partial class LogsRequestUriBuilder
         var queryParts = new List<string>
         {
             $"server_number={query.ServerId}",
-            $"sort={Encode(query.Sort)}",
+            $"sort={NormalizeSort(query.Sort)}",
             $"limit={NormalizeLimit(query.Limit)}",
             $"page={NormalizePage(query.Page)}"
         };
@@ -151,6 +159,18 @@ public static partial class LogsRequestUriBuilder
         }
 
         return DefaultLimit;
+    }
+
+    private static string NormalizeSort(string value)
+    {
+        if (value is null || !SupportedSortValues.Contains(value))
+        {
+            throw new ArgumentException(
+                $"Sort '{value}' is not supported. Use 'desc' (newest first) or 'asc' (oldest first).",
+                nameof(value));
+        }
+
+        return value.ToLowerInvariant();
     }
 
     private static int NormalizePage(int value)

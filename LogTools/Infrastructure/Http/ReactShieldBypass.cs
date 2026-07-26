@@ -56,8 +56,11 @@ internal static partial class ReactShieldBypass
 
             Logger.LogDebug("Indexed array method did not match, trying hex value extraction");
 
-            var values = QuotedHexRegex().Matches(content)
-                .Select(static match => NormalizeHex(match.Groups["value"].Value))
+            // String literals must be decoded, not stripped of their \x markers: the challenge
+            // mixes plain-hex payload strings with \x-escaped identifiers, and deleting the
+            // markers turns those identifiers into hex-looking values that are not payload.
+            var values = QuotedStringRegex().Matches(content)
+                .Select(static match => DecodeJavascriptStringLiteral(match.Groups["value"].Value))
                 .Where(static value => !string.IsNullOrWhiteSpace(value))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
@@ -79,7 +82,9 @@ internal static partial class ReactShieldBypass
                     continue;
                 }
 
-                Logger.LogInformation("React challenge solved via brute-force decryption (candidate #{CandidateNumber})", candidateCount);
+                // Unlike the indexed-array path this is a guess: nothing in the decrypted block
+                // identifies it as the right one, so the first structurally valid triple wins.
+                Logger.LogWarning("React challenge solved via unverifiable brute-force decryption (candidate #{CandidateNumber})", candidateCount);
                 return token;
             }
 
@@ -138,7 +143,7 @@ internal static partial class ReactShieldBypass
                 continue;
             }
 
-            var value = NormalizeHex(values[index]);
+            var value = values[index];
             if (!IsHex(value))
             {
                 continue;
@@ -206,8 +211,13 @@ internal static partial class ReactShieldBypass
 
             using var decryptor = aes.CreateDecryptor();
             var decrypted = decryptor.TransformFinalBlock(encrypted, 0, encrypted.Length);
-            token = Convert.ToHexString(decrypted).ToLowerInvariant();
-            return IsHex(token) && token.Length >= 32;
+
+            token = Convert.ToHexString(UnpadLikeSlowAes(decrypted)).ToLowerInvariant();
+
+            // Decryption either threw or produced the block the caller asked for. There is no
+            // marker in the plaintext to check it against, so success here means "well-formed
+            // input", never "this is the token the service expects".
+            return token.Length > 0;
         }
         catch (CryptographicException)
         {
@@ -223,16 +233,49 @@ internal static partial class ReactShieldBypass
         }
     }
 
-    private static string NormalizeHex(string value)
+    /// <summary>
+    /// Mirrors slowAES.unpadBytesOut, which the challenge script reaches through CBC mode.
+    /// It only strips a trailing run of identical bytes when the plaintext exceeds one block,
+    /// so a single-block challenge — the only kind the service currently serves — is returned
+    /// untouched.
+    /// </summary>
+    private static byte[] UnpadLikeSlowAes(byte[] data)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        const int blockSize = 16;
+        if (data.Length <= blockSize)
         {
-            return string.Empty;
+            return data;
         }
 
-        return value.Contains(@"\x", StringComparison.Ordinal)
-            ? value.Replace(@"\x", string.Empty, StringComparison.Ordinal)
-            : value;
+        var padCount = 0;
+        var padByte = -1;
+
+        for (var i = data.Length - 1; i >= data.Length - 1 - blockSize; i--)
+        {
+            if (data[i] > blockSize)
+            {
+                break;
+            }
+
+            if (padByte == -1)
+            {
+                padByte = data[i];
+            }
+
+            if (data[i] != padByte)
+            {
+                padCount = 0;
+                break;
+            }
+
+            padCount++;
+            if (padCount == padByte)
+            {
+                break;
+            }
+        }
+
+        return padCount > 0 ? data[..^padCount] : data;
     }
 
     private static bool IsHex(string value)
@@ -276,7 +319,4 @@ internal static partial class ReactShieldBypass
 
     [GeneratedRegex(@"\\x(?<hex>[0-9a-fA-F]{2})", RegexOptions.Singleline)]
     private static partial Regex HexEscapeRegex();
-
-    [GeneratedRegex("""["'](?<value>.*?)["']""", RegexOptions.Singleline)]
-    private static partial Regex QuotedHexRegex();
 }
