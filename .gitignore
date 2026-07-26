@@ -10,3 +10,8 @@
 *.log
 *.tmp
 *.DS_Store
+
+# AI assistant files
+CLAUDE.md
+CLAUDE.local.md
+.claude/
